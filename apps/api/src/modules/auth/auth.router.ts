@@ -88,7 +88,7 @@ router.post("/logout", authenticate, async (req: Request, res: Response): Promis
   const { refreshToken } = req.body as { refreshToken?: string };
   if (refreshToken) {
     const hash = crypto.createHash("sha256").update(refreshToken).digest("hex");
-    await prisma.session.deleteMany({ where: { userId: req.user!.id, refreshTokenHash: hash } });
+    await prisma.session.deleteMany({ where: { userId: (req as any).user?.id, refreshTokenHash: hash } });
   }
   res.json({ success: true, data: null });
 });
@@ -96,7 +96,7 @@ router.post("/logout", authenticate, async (req: Request, res: Response): Promis
 router.get("/me", authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const user = await prisma.user.findUnique({
-      where: { id: req.user!.id },
+      where: { id: (req as any).user?.id },
       select: { id: true, fullName: true, username: true, phone: true, role: true, commission: true, isActive: true }
     });
     if (!user) {
@@ -116,7 +116,7 @@ router.patch("/change-password", authenticate, async (req: Request, res: Respons
     return;
   }
   try {
-    const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+    const user = await prisma.user.findUnique({ where: { id: (req as any).user?.id } });
     if (!user || !(await bcrypt.compare(currentPassword, user.passwordHash))) {
       res.status(401).json({ success: false, error: "Cari şifrə yanlışdır" });
       return;

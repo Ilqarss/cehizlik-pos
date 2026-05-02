@@ -88,8 +88,8 @@ router.post("/", requirePermission("products:write"), async (req: Request, res: 
         currentStock: Number(currentStock ?? 0),
         status: String(status) as "ACTIVE" | "INACTIVE" | "ARCHIVED",
         coverImageUrl: coverImageUrl ? String(coverImageUrl) : imageRows.find((image) => image.isPrimary)?.imageUrl ?? null,
-        createdById: req.user!.id,
-        updatedById: req.user!.id,
+        createdById: (req as any).user?.id,
+        updatedById: (req as any).user?.id,
         images: imageRows.length
           ? {
               create: imageRows
@@ -150,7 +150,7 @@ router.patch("/:id", requirePermission("products:write"), async (req: Request, r
           req.body.discountPrice === "" ? null : req.body.discountPrice !== undefined ? Number(req.body.discountPrice) : undefined,
         minStockLevel: req.body.minStockLevel !== undefined ? Number(req.body.minStockLevel) : undefined,
         currentStock: req.body.currentStock !== undefined ? Number(req.body.currentStock) : undefined,
-        updatedById: req.user!.id,
+        updatedById: (req as any).user?.id,
         images: imageRows.length
           ? {
               deleteMany: {},
@@ -238,7 +238,7 @@ router.post("/:id/images", requirePermission("products:write"), async (req: Requ
     if (image.isPrimary) {
       await prisma.product.update({
         where: { id: req.params.id },
-        data: { coverImageUrl: image.imageUrl, updatedById: req.user!.id }
+        data: { coverImageUrl: image.imageUrl, updatedById: (req as any).user?.id }
       });
     }
 

@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { prisma } from "../../db";
 import { authenticate, requirePermission } from "../../middleware/auth";
-import type { UserRole } from "@cehizlik/types";
+import type { UserRole } from "../../types";
 
 const router = Router();
 router.use(authenticate);
@@ -22,13 +22,13 @@ router.get("/tailors", async (_req: Request, res: Response): Promise<void> => {
 // ─── Siyahı ───────────────────────────────────────────────────────────────────
 router.get("/", requirePermission("tailor:read"), async (req: Request, res: Response): Promise<void> => {
   const { status, page = "1", limit = "50" } = req.query as Record<string, string>;
-  const role = req.user!.role as UserRole;
+  const role = (req as any).user?.role as UserRole;
   const skip = (Number(page) - 1) * Number(limit);
 
   const where: Record<string, unknown> = {};
   if (status) where.status = status;
-  // Dərzi yalnız özünə atanmış sifarişləri görür
-  if (role === "TAILOR") where.tailorId = req.user!.id;
+  // Derzi yalniz ozune atanmis sifarisleri gorur
+  if (role === "TAILOR") where.tailorId = (req as any).user?.id;
 
   try {
     const [items, total] = await Promise.all([
@@ -64,16 +64,16 @@ router.patch("/:id/status", requirePermission("tailor:write"), async (req: Reque
     return;
   }
 
-  const role = req.user!.role as UserRole;
+  const role = (req as any).user?.role as UserRole;
 
   try {
     const order = await prisma.tailorOrder.findUnique({ where: { id: req.params.id } });
     if (!order) {
-      res.status(404).json({ success: false, error: "Sifariş tapılmadı" });
+      res.status(404).json({ success: false, error: "Sifaris tapilmadi" });
       return;
     }
-    // Dərzi yalnız özünə aid sifarişi yeniləyə bilər
-    if (role === "TAILOR" && order.tailorId !== req.user!.id) {
+    // Derzi yalniz ozune aid sifaris yenileyebiler
+    if (role === "TAILOR" && order.tailorId !== (req as any).user?.id) {
       res.status(403).json({ success: false, error: "Bu sifariş sizə aid deyil" });
       return;
     }

@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { prisma } from "../../db";
 import { authenticate, requirePermission } from "../../middleware/auth";
-import type { UserRole } from "@cehizlik/types";
+import type { UserRole } from "../../types";
 
 const router = Router();
 router.use(authenticate);
@@ -10,7 +10,7 @@ router.use(authenticate);
 router.get("/", requirePermission("inventory:read"), async (req: Request, res: Response): Promise<void> => {
   const { q, type, page = "1", limit = "50" } = req.query as Record<string, string>;
   const skip = (Number(page) - 1) * Number(limit);
-  const isAdmin = (req.user!.role as UserRole) === "ADMIN";
+  const isAdmin = ((req as any).user?.role as UserRole) === "ADMIN";
 
   try {
     const where: Record<string, unknown> = { isActive: true };
@@ -41,7 +41,7 @@ router.get("/", requirePermission("inventory:read"), async (req: Request, res: R
 
 // ─── Tək məhsul ───────────────────────────────────────────────────────────────
 router.get("/:id", requirePermission("inventory:read"), async (req: Request, res: Response): Promise<void> => {
-  const isAdmin = (req.user!.role as UserRole) === "ADMIN";
+  const isAdmin = ((req as any).user?.role as UserRole) === "ADMIN";
   try {
     const product = await prisma.product.findUnique({
       where: { id: req.params.id },
@@ -54,8 +54,7 @@ router.get("/:id", requirePermission("inventory:read"), async (req: Request, res
       return;
     }
     if (!isAdmin) {
-      const { costPrice: _c, marginPct: _m, ...safe } = product as typeof product & { costPrice: unknown; marginPct: unknown };
-      void _c; void _m;
+      const { costPrice: _c, marginPct: _m, ...safe } = product as any;
       res.json({ success: true, data: safe });
       return;
     }
@@ -249,7 +248,7 @@ router.get("/status/low-stock", requirePermission("inventory:read"), async (_req
 
 // ─── Mal silmə (yalnız Admin) ──────────────────────────────────────────────────
 router.delete("/:id", requirePermission("inventory:write"), async (req: Request, res: Response): Promise<void> => {
-  const isAdmin = (req.user!.role as UserRole) === "ADMIN";
+  const isAdmin = ((req as any).user?.role as UserRole) === "ADMIN";
   if (!isAdmin) {
     res.status(403).json({ success: false, error: "Yalnız admin malı silə bilər" });
     return;

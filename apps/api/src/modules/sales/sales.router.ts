@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { prisma } from "../../db";
 import { authenticate, requirePermission } from "../../middleware/auth";
-import type { UserRole } from "@cehizlik/types";
+import type { UserRole } from "../../types";
 
 const router = Router();
 router.use(authenticate);
@@ -10,7 +10,7 @@ router.use(authenticate);
 router.get("/", requirePermission("sales:read"), async (req: Request, res: Response): Promise<void> => {
   const { page = "1", limit = "30", from, to, sellerId } = req.query as Record<string, string>;
   const skip = (Number(page) - 1) * Number(limit);
-  const isAdmin = (req.user!.role as UserRole) === "ADMIN";
+  const isAdmin = ((req as any).user?.role as UserRole) === "ADMIN";
 
   const where: Record<string, unknown> = {};
   if (from || to) {
@@ -19,8 +19,8 @@ router.get("/", requirePermission("sales:read"), async (req: Request, res: Respo
       ...(to ? { lte: new Date(to) } : {})
     };
   }
-  // Satıcı yalnız öz satışlarını görür
-  if (!isAdmin) where.sellerId = req.user!.id;
+  // Satici yalniz oz satislarini gorur
+  if (!isAdmin) where.sellerId = (req as any).user?.id;
   else if (sellerId) where.sellerId = sellerId;
 
   try {
@@ -43,8 +43,7 @@ router.get("/", requirePermission("sales:read"), async (req: Request, res: Respo
     // Satıcıdan mənfəəti gizlət
     const sanitized = items.map(sale => {
       if (!isAdmin) {
-        const { profitAmt: _p, ...rest } = sale as typeof sale & { profitAmt: unknown };
-        void _p;
+        const { profitAmt: _p, ...rest } = sale as any;
         return rest;
       }
       return sale;
@@ -58,7 +57,7 @@ router.get("/", requirePermission("sales:read"), async (req: Request, res: Respo
 
 // ─── Tək satış ────────────────────────────────────────────────────────────────
 router.get("/:id", requirePermission("sales:read"), async (req: Request, res: Response): Promise<void> => {
-  const isAdmin = (req.user!.role as UserRole) === "ADMIN";
+  const isAdmin = ((req as any).user?.role as UserRole) === "ADMIN";
   try {
     const sale = await prisma.sale.findUnique({
       where: { id: req.params.id },
@@ -71,16 +70,15 @@ router.get("/:id", requirePermission("sales:read"), async (req: Request, res: Re
       }
     });
     if (!sale) {
-      res.status(404).json({ success: false, error: "Satış tapılmadı" });
+      res.status(404).json({ success: false, error: "Satis tapilmadi" });
       return;
     }
-    if (!isAdmin && sale.sellerId !== req.user!.id) {
-      res.status(403).json({ success: false, error: "Bu satışa giriş yoxdur" });
+    if (!isAdmin && sale.sellerId !== (req as any).user?.id) {
+      res.status(403).json({ success: false, error: "Bu satisa giris yoxdur" });
       return;
     }
     if (!isAdmin) {
-      const { profitAmt: _p, ...rest } = sale as typeof sale & { profitAmt: unknown };
-      void _p;
+      const { profitAmt: _p, ...rest } = sale as any;
       res.json({ success: true, data: rest });
       return;
     }
@@ -227,7 +225,7 @@ router.post("/", requirePermission("sales:create"), async (req: Request, res: Re
     const sale = await prisma.$transaction(async (tx) => {
       const newSale = await tx.sale.create({
         data: {
-          sellerId: req.user!.id,
+          sellerId: (req as any).user?.id,
           customerId: finalCustomerId ?? null,
           subtotal,
           discountPct: Number(discountPct),

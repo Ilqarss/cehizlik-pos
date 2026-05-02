@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { prisma } from "../../db";
 import { authenticate, requirePermission } from "../../middleware/auth";
-import type { UserRole } from "@cehizlik/types";
+import type { UserRole } from "../../types";
 
 const router = Router();
 router.use(authenticate);
@@ -10,7 +10,7 @@ router.use(authenticate);
 router.get("/", requirePermission("expenses:read"), async (req: Request, res: Response): Promise<void> => {
   const { from, to, page = "1", limit = "50" } = req.query as Record<string, string>;
   const skip = (Number(page) - 1) * Number(limit);
-  const isAdmin = (req.user!.role as UserRole) === "ADMIN";
+  const isAdmin = ((req as any).user?.role as UserRole) === "ADMIN";
 
   const where: Record<string, unknown> = {};
   if (from || to) {
@@ -19,8 +19,8 @@ router.get("/", requirePermission("expenses:read"), async (req: Request, res: Re
       ...(to ? { lte: new Date(to) } : {})
     };
   }
-  // Satıcı yalnız öz xərclərini görür
-  if (!isAdmin) where.recordedBy = req.user!.id;
+  // Satici yalniz oz xercini gorur
+  if (!isAdmin) where.recordedBy = (req as any).user?.id;
 
   try {
     const [items, total] = await Promise.all([
@@ -52,7 +52,7 @@ router.post("/", requirePermission("expenses:write"), async (req: Request, res: 
         category: String(category),
         amount: Number(amount),
         description: description ? String(description) : null,
-        recordedBy: req.user!.id,
+        recordedBy: (req as any).user?.id,
         expenseDate: expenseDate ? new Date(String(expenseDate)) : new Date()
       }
     });
@@ -70,8 +70,8 @@ router.delete("/:id", requirePermission("expenses:write"), async (req: Request, 
       res.status(404).json({ success: false, error: "Xərc tapılmadı" });
       return;
     }
-    const isAdmin = (req.user!.role as UserRole) === "ADMIN";
-    if (!isAdmin && expense.recordedBy !== req.user!.id) {
+    const isAdmin = ((req as any).user?.role as UserRole) === "ADMIN";
+    if (!isAdmin && expense.recordedBy !== (req as any).user?.id) {
       res.status(403).json({ success: false, error: "Bu xərci silmək icazəniz yoxdur" });
       return;
     }

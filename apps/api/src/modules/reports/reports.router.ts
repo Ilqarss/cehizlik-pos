@@ -6,7 +6,7 @@ const router = Router();
 
 router.get("/summary", authenticate, requirePermission("reports:read"), async (req: Request, res: Response): Promise<void> => {
   const { from, to } = req.query as Record<string, string>;
-  const isAdmin = req.user!.role === "ADMIN";
+  const isAdmin = (req as any).user?.role === "ADMIN";
 
   const dateFilter = from || to
     ? { soldAt: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } }

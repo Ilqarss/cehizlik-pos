@@ -44,7 +44,7 @@ router.get("/overview", authenticate, requirePermission("dashboard:view"), async
           categoriesCount
         },
         lowStockProducts,
-        currentUserRole: req.user!.role
+        currentUserRole: (req as any).user?.role
       }
     });
   } catch {

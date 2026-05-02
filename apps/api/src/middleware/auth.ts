@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import { hasPermission, type Permission, type UserRole } from "@cehizlik/types";
+import { hasPermission, type Permission, type UserRole } from "../types";
 import { verifyAccessToken } from "../utils/jwt";
 
 declare global {

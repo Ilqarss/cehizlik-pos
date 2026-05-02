@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
-import type { UserRole } from "@cehizlik/types";
+import type { UserRole } from "../../types";
 import { prisma } from "../../db";
 import { authenticate, requirePermission } from "../../middleware/auth";
 
@@ -125,7 +125,7 @@ router.patch("/:id", authenticate, requirePermission("users:write"), async (req:
 router.delete("/:id", authenticate, requirePermission("users:write"), async (req: Request, res: Response): Promise<void> => {
   try {
     // Özünü silə bilməz
-    if (req.params.id === req.user!.id) {
+    if (req.params.id === (req as any).user?.id) {
       res.status(400).json({ success: false, error: "Öz hesabınızı silə bilməzsiniz" });
       return;
     }
