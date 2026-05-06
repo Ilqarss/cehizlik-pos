@@ -94,7 +94,7 @@ export function useAuth() {
 // Authenticated API yardımçısı
 export function useApi() {
   const { accessToken } = useAuth();
-  return useCallback(async <T>(path: string, options?: RequestInit): Promise<T> => {
+  return useCallback(async <T,>(path: string, options?: RequestInit): Promise<T> => {
     const r = await fetch(`${API}${path}`, {
       ...options,
       headers: {
