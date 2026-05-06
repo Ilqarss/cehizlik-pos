@@ -1,0 +1,28 @@
+FROM node:20-alpine
+
+RUN npm install -g pnpm@10.8.1
+
+WORKDIR /app
+
+# Copy workspace configuration
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+
+# Copy all packages and the api app
+COPY packages ./packages
+COPY apps/api ./apps/api
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile
+
+# Generate Prisma Client
+WORKDIR /app/apps/api
+RUN pnpm db:generate
+
+# Set environment variables
+ENV NODE_ENV=production
+ENV PORT=4000
+
+EXPOSE 4000
+
+# Start API
+CMD ["npx", "tsx", "src/server.ts"]
