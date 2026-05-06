@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "exit 0",
+    "build": "prisma generate --schema=prisma/schema.prisma",
     "start": "node dist/server.js",
     "lint": "echo lint-skip",
     "typecheck": "echo typecheck-skip",
