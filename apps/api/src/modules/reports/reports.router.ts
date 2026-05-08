@@ -135,6 +135,18 @@ router.get("/profit", authenticate, requirePermission("reports:profit"), async (
       return acc;
     }, {});
 
+    const byDate = sales.reduce<Record<string, { revenue: number, profit: number }>>((acc, s) => {
+      const dateKey = s.soldAt.toISOString().slice(0, 10); // YYYY-MM-DD
+      if (!acc[dateKey]) acc[dateKey] = { revenue: 0, profit: 0 };
+      acc[dateKey].revenue += s.total;
+      acc[dateKey].profit += s.profitAmt ?? 0;
+      return acc;
+    }, {});
+    
+    const dailyTrend = Object.entries(byDate)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, data]) => ({ date, ...data }));
+
     res.json({
       success: true,
       data: {
@@ -144,6 +156,7 @@ router.get("/profit", authenticate, requirePermission("reports:profit"), async (
         netProfit,
         totalDiscount,
         expensesByCategory: Object.entries(byCategory).map(([category, amount]) => ({ category, amount })),
+        dailyTrend,
         salesCount: sales.length
       }
     });
@@ -194,6 +207,100 @@ router.get("/tailor-bonuses", authenticate, requirePermission("reports:read"), a
     res.json({ success: true, data: { items: result } });
   } catch {
     res.status(500).json({ success: false, error: "Dərzi bonusları alınmadı" });
+  }
+});
+
+// ─── Günlük Açot (Z-Report) ───────────────────────────────────────────────────
+router.get("/daily-print", authenticate, requirePermission("reports:read"), async (req: Request, res: Response): Promise<void> => {
+  const { date } = req.query as Record<string, string>;
+  
+  if (!date) {
+    res.status(400).json({ success: false, error: "Tarix tələb olunur" });
+    return;
+  }
+
+  const startOfDay = new Date(`${date}T00:00:00`);
+  const endOfDay = new Date(`${date}T23:59:59`);
+
+  try {
+    const [sales, expenses] = await Promise.all([
+      prisma.sale.findMany({
+        where: { soldAt: { gte: startOfDay, lte: endOfDay } },
+        include: {
+          seller: { select: { fullName: true } },
+          payments: true
+        },
+        orderBy: { soldAt: "asc" }
+      }),
+      prisma.expense.findMany({
+        where: { expenseDate: { gte: startOfDay, lte: endOfDay } },
+        include: { user: { select: { fullName: true } } },
+        orderBy: { expenseDate: "asc" }
+      })
+    ]);
+
+    // Satışların icmalı
+    let totalCash = 0;
+    let totalCard = 0;
+    let totalTransfer = 0;
+    let totalDiscount = 0;
+    let totalDeposit = 0;
+    
+    // Satışlardan və borc ödənişlərindən gələn cəmi
+    for (const sale of sales) {
+      totalDeposit += sale.deposit;
+      totalDiscount += (sale.subtotal * (sale.discountPct ?? 0) / 100) + (sale.discountAmt ?? 0);
+      
+      for (const p of sale.payments) {
+        if (p.paymentType === "CASH") totalCash += p.amount;
+        if (p.paymentType === "CARD") totalCard += p.amount;
+        if (p.paymentType === "TRANSFER") totalTransfer += p.amount;
+      }
+    }
+
+    // Xərclərin icmalı
+    let totalExpenses = 0;
+    for (const expense of expenses) {
+      totalExpenses += expense.amount;
+    }
+
+    // Xalis kassa (Nağd gəlirlər - Xərclər)
+    const netCash = totalCash - totalExpenses;
+
+    res.json({
+      success: true,
+      data: {
+        date,
+        totalSalesAmt: sales.reduce((s, x) => s + x.total, 0),
+        totalDiscount,
+        totalDeposit,
+        totalCash,
+        totalCard,
+        totalTransfer,
+        totalExpenses,
+        netCash,
+        salesCount: sales.length,
+        sales: sales.map(s => ({
+          saleNumber: s.saleNumber,
+          total: s.total,
+          deposit: s.deposit,
+          debt: s.debt,
+          sellerName: s.seller.fullName,
+          time: s.soldAt.toISOString()
+        })),
+        expenses: expenses.map(e => ({
+          category: e.category,
+          amount: e.amount,
+          description: e.description,
+          userName: e.user.fullName,
+          time: e.expenseDate.toISOString()
+        }))
+      }
+    });
+
+  } catch (err) {
+    console.error("[daily-print error]", err);
+    res.status(500).json({ success: false, error: "Açot məlumatları alınmadı" });
   }
 });
 

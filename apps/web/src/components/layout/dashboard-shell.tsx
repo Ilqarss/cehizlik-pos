@@ -2,7 +2,7 @@
 
 import {
   ChartNoAxesColumn, LayoutDashboard, LogOut, Menu, Package2,
-  Scissors, Settings, ShoppingCart, Users, Wallet, UserCog, X
+  Scissors, Settings, ShoppingCart, Users, Wallet, UserCog, X, Printer
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -69,6 +69,13 @@ const navigation: NavItem[] = [
     label: "Hesabatlar",
     description: "Mənfəət, komissiya",
     icon: <ChartNoAxesColumn className="h-4 w-4" />,
+    permission: "reports:read"
+  },
+  {
+    href: "/daily-report",
+    label: "Günlük Açot",
+    description: "Kassa və Z-Report",
+    icon: <Printer className="h-4 w-4" />,
     permission: "reports:read"
   },
   {

@@ -14,6 +14,9 @@ export default function SettingsPage() {
   const router = useRouter();
 
   const [maxDiscountPct, setMaxDiscountPct] = useState("15");
+  const [tailorStraightBonus, setTailorStraightBonus] = useState("0.03");
+  const [tailorBuzmeBonus, setTailorBuzmeBonus] = useState("0.06");
+  
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -22,25 +25,40 @@ export default function SettingsPage() {
   }, [authLoading, router, user]);
 
   const load = useCallback(() => {
-    apiFetch<{ key: string; value: string } | null>("/settings/max_discount_pct")
-      .then(d => { if (d?.value) setMaxDiscountPct(d.value); })
-      .catch(() => undefined);
+    Promise.all([
+      apiFetch<{ key: string; value: string } | null>("/settings/max_discount_pct").catch(() => null),
+      apiFetch<{ key: string; value: string } | null>("/settings/tailor_straight_bonus").catch(() => null),
+      apiFetch<{ key: string; value: string } | null>("/settings/tailor_buzme_bonus").catch(() => null)
+    ]).then(([d1, d2, d3]) => {
+      if (d1?.value) setMaxDiscountPct(d1.value);
+      if (d2?.value) setTailorStraightBonus(d2.value);
+      if (d3?.value) setTailorBuzmeBonus(d3.value);
+    });
   }, [apiFetch]);
 
   useEffect(() => { load(); }, [load]);
 
   async function saveSettings() {
     const val = Number(maxDiscountPct);
+    const straightVal = Number(tailorStraightBonus);
+    const buzmeVal = Number(tailorBuzmeBonus);
+
     if (isNaN(val) || val < 0 || val > 100) {
       alert("Endirim faizi 0-100 arasında olmalıdır");
       return;
     }
+    if (isNaN(straightVal) || straightVal < 0 || isNaN(buzmeVal) || buzmeVal < 0) {
+      alert("Bonus məbləğləri düzgün deyil");
+      return;
+    }
+
     setSaving(true);
     try {
-      await apiFetch("/settings/max_discount_pct", {
-        method: "PUT",
-        body: JSON.stringify({ value: String(val) })
-      });
+      await Promise.all([
+        apiFetch("/settings/max_discount_pct", { method: "PUT", body: JSON.stringify({ value: String(val) }) }),
+        apiFetch("/settings/tailor_straight_bonus", { method: "PUT", body: JSON.stringify({ value: String(straightVal) }) }),
+        apiFetch("/settings/tailor_buzme_bonus", { method: "PUT", body: JSON.stringify({ value: String(buzmeVal) }) })
+      ]);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (err) {
@@ -86,6 +104,39 @@ export default function SettingsPage() {
                   placeholder="15"
                 />
                 <span className="text-sm text-[var(--muted-foreground)]">%</span>
+              </div>
+            </div>
+            
+            <div className="pt-4 border-t border-[var(--border)]">
+              <label className="text-sm font-semibold">Dərzi bonusları (AZN / metr)</label>
+              <p className="text-xs text-[var(--muted-foreground)] mb-4">
+                Dərzi sifarişi yaranarkən hər metrə düşən bonus məbləğini təyin edin.
+              </p>
+              <div className="grid grid-cols-2 gap-4 max-w-sm">
+                <div>
+                  <label className="text-xs font-semibold text-[var(--muted-foreground)]">Düz tikiş</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={tailorStraightBonus}
+                    onChange={e => setTailorStraightBonus(e.target.value)}
+                    className="mt-1"
+                    placeholder="0.03"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-[var(--muted-foreground)]">Büzmə tikiş</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={tailorBuzmeBonus}
+                    onChange={e => setTailorBuzmeBonus(e.target.value)}
+                    className="mt-1"
+                    placeholder="0.06"
+                  />
+                </div>
               </div>
             </div>
 

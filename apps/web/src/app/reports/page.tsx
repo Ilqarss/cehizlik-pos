@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 import { Input } from "../../components/ui/input";
 import { DashboardShell } from "../../components/layout/dashboard-shell";
 import { useApi, useAuth } from "../../lib/auth/auth-context";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
 type ProfitReport = {
   totalRevenue: number;
@@ -16,6 +17,7 @@ type ProfitReport = {
   totalDiscount: number;
   salesCount: number;
   expensesByCategory: { category: string; amount: number }[];
+  dailyTrend: { date: string; revenue: number; profit: number }[];
 };
 
 type CommissionItem = {
@@ -48,6 +50,8 @@ export default function ReportsPage() {
   const [commissions, setCommissions] = useState<CommissionItem[]>([]);
   const [recentSales, setRecentSales] = useState<Sale[]>([]);
   const [tailorBonuses, setTailorBonuses] = useState<TailorBonus[]>([]);
+  const [straightBonusRate, setStraightBonusRate] = useState("0.03");
+  const [buzmeBonusRate, setBuzmeBonusRate] = useState("0.06");
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"summary" | "commissions" | "sales" | "tailor">("summary");
 
@@ -61,7 +65,9 @@ export default function ReportsPage() {
       tasks.push(
         apiFetch<ProfitReport>(`/reports/profit${qp}`).then(setProfit).catch(() => undefined),
         apiFetch<{ items: CommissionItem[] }>(`/reports/commissions${qp}`).then(d => setCommissions(d.items)).catch(() => undefined),
-        apiFetch<{ items: TailorBonus[] }>("/reports/tailor-bonuses").then(d => setTailorBonuses(d.items)).catch(() => undefined)
+        apiFetch<{ items: TailorBonus[] }>("/reports/tailor-bonuses").then(d => setTailorBonuses(d.items)).catch(() => undefined),
+        apiFetch<{ key: string; value: string } | null>("/settings/tailor_straight_bonus").then(d => { if (d?.value) setStraightBonusRate(d.value); }).catch(() => undefined),
+        apiFetch<{ key: string; value: string } | null>("/settings/tailor_buzme_bonus").then(d => { if (d?.value) setBuzmeBonusRate(d.value); }).catch(() => undefined)
       );
     }
 
@@ -127,30 +133,74 @@ export default function ReportsPage() {
               <KpiCard title="Ümumi borc" value={`₼ ${totalDebt.toFixed(2)}`} subtitle="Ödənilməmiş borcllar" tone={totalDebt > 0 ? "danger" : "success"} />
             </div>
 
-            {isAdmin && profit && profit.expensesByCategory.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Xərclər kateqoriya üzrə</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {profit.expensesByCategory.sort((a, b) => b.amount - a.amount).map(ec => {
-                      const pct = profit.totalExpenses > 0 ? (ec.amount / profit.totalExpenses * 100) : 0;
-                      return (
-                        <div key={ec.category}>
-                          <div className="flex items-center justify-between text-sm mb-1">
-                            <span>{ec.category}</span>
-                            <span className="font-semibold">₼ {ec.amount.toFixed(2)} ({pct.toFixed(0)}%)</span>
-                          </div>
-                          <div className="h-2 rounded-full bg-[var(--border)]">
-                            <div className="h-2 rounded-full bg-[var(--warning)]" style={{ width: `${pct}%` }} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
+            {isAdmin && profit && (
+              <div className="grid gap-6 lg:grid-cols-2 mt-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Gəlir və Mənfəət Trendi</CardTitle>
+                    <CardDescription>Seçilən aralıqda günlük satış və mənfəət</CardDescription>
+                  </CardHeader>
+                  <CardContent className="h-[300px]">
+                    {profit.dailyTrend && profit.dailyTrend.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={profit.dailyTrend} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                          <XAxis dataKey="date" tickFormatter={tick => tick.slice(5)} tick={{ fontSize: 12, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} />
+                          <YAxis tick={{ fontSize: 12, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} tickFormatter={tick => `₼${tick}`} />
+                          <Tooltip 
+                            formatter={(value: number, name: string) => [`₼ ${value.toFixed(2)}`, name === "revenue" ? "Gəlir" : "Mənfəət"]}
+                            labelFormatter={(label) => `Tarix: ${label}`}
+                            contentStyle={{ borderRadius: "12px", border: "1px solid var(--border)", boxShadow: "0 4px 6px rgba(0,0,0,0.05)" }}
+                          />
+                          <Legend wrapperStyle={{ fontSize: "12px" }} />
+                          <Bar dataKey="revenue" name="Gəlir (Satış)" fill="var(--primary)" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                          <Bar dataKey="profit" name="Mənfəət" fill="var(--success)" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-sm text-[var(--muted-foreground)]">Qrafik üçün məlumat yoxdur</div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Xərclərin Bölgüsü</CardTitle>
+                    <CardDescription>Ümumi xərclərin kateqoriyalar üzrə faizi</CardDescription>
+                  </CardHeader>
+                  <CardContent className="h-[300px]">
+                    {profit.expensesByCategory && profit.expensesByCategory.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={profit.expensesByCategory}
+                            cx="50%" cy="50%"
+                            innerRadius={70}
+                            outerRadius={100}
+                            paddingAngle={3}
+                            dataKey="amount"
+                            nameKey="category"
+                            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                            labelLine={false}
+                            style={{ fontSize: "11px", fontWeight: "bold" }}
+                          >
+                            {profit.expensesByCategory.map((entry, index) => {
+                              const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6"];
+                              return <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />;
+                            })}
+                          </Pie>
+                          <Tooltip 
+                            formatter={(value: number) => [`₼ ${value.toFixed(2)}`, "Xərc"]}
+                            contentStyle={{ borderRadius: "12px", border: "1px solid var(--border)", boxShadow: "0 4px 6px rgba(0,0,0,0.05)" }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-sm text-[var(--muted-foreground)]">Xərc yoxdur</div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
             )}
           </div>
         )}
@@ -303,7 +353,7 @@ export default function ReportsPage() {
               <CardTitle className="text-base">Dərzi Bonusları</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-xs text-[var(--muted-foreground)] mb-4">Düz tikiş: 0.03 AZN/metr | Büzmə: 0.06 AZN/metr</p>
+              <p className="text-xs text-[var(--muted-foreground)] mb-4">Düz tikiş: {straightBonusRate} AZN/metr | Büzmə: {buzmeBonusRate} AZN/metr</p>
               {tailorBonuses.length === 0 ? (
                 <p className="text-center text-[var(--muted-foreground)] py-8">Dərzi bonusu tapılmadı</p>
               ) : tailorBonuses.map(t => (
@@ -373,10 +423,15 @@ function KpiCard({ title, value, subtitle, tone }: { title: string; value: strin
 
 function monthStartStr() {
   const d = new Date();
-  d.setDate(1);
-  return d.toISOString().slice(0, 10);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}-01`;
 }
 
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }

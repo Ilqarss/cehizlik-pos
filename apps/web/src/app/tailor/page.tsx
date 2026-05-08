@@ -202,7 +202,8 @@ function OrderCard({ order, isAdmin, onStatusChange, updating }: {
       <div className="mt-2 flex items-center gap-2 text-xs">
         <span className="text-[var(--muted-foreground)]">Tikiş:</span>
         <span className="rounded-lg border border-[var(--border)] bg-gray-50 px-2 py-0.5 text-xs font-medium">
-          {(order.stitchType ?? "straight") === "buzme" ? "Büzmə (0.06 AZN/m)" : "Düz (0.03 AZN/m)"}
+          {(order.stitchType ?? "straight") === "buzme" ? "Büzmə" : "Düz"}
+          {order.bonusPerUnit !== undefined ? ` (${order.bonusPerUnit.toFixed(2)} AZN/m)` : ""}
         </span>
         {order.totalBonus !== undefined && order.totalBonus > 0 && (
           <span className="text-[var(--accent)] font-semibold">Bonus: ₼ {order.totalBonus.toFixed(2)}</span>

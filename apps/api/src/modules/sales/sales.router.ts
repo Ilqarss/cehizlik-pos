@@ -123,9 +123,16 @@ router.post("/", requirePermission("sales:create"), async (req: Request, res: Re
     return;
   }
 
-  // Endirim limitini yoxla
+  // Ayarları yoxla (endirim limiti və dərzi bonusları)
+  let straightBonus = 0.03;
+  let buzmeBonus = 0.06;
   try {
-    const maxDiscountSetting = await prisma.setting.findUnique({ where: { key: "max_discount_pct" } });
+    const [maxDiscountSetting, straightSetting, buzmeSetting] = await Promise.all([
+      prisma.setting.findUnique({ where: { key: "max_discount_pct" } }),
+      prisma.setting.findUnique({ where: { key: "tailor_straight_bonus" } }),
+      prisma.setting.findUnique({ where: { key: "tailor_buzme_bonus" } })
+    ]);
+    
     if (maxDiscountSetting) {
       const maxPct = Number(maxDiscountSetting.value);
       if (!isNaN(maxPct) && Number(discountPct) > maxPct) {
@@ -135,6 +142,13 @@ router.post("/", requirePermission("sales:create"), async (req: Request, res: Re
         });
         return;
       }
+    }
+    
+    if (straightSetting && !isNaN(Number(straightSetting.value))) {
+      straightBonus = Number(straightSetting.value);
+    }
+    if (buzmeSetting && !isNaN(Number(buzmeSetting.value))) {
+      buzmeBonus = Number(buzmeSetting.value);
     }
   } catch {
     // ayar tapılmasa keçir
@@ -290,6 +304,9 @@ router.post("/", requirePermission("sales:create"), async (req: Request, res: Re
           if (!saleItem) continue;
           const product = productMap.get(item.productId);
           if (product?.productType === "CURTAIN") {
+            const isBuzme = (item.buzmeFactor ?? 1) > 1;
+            const appliedBonusPerUnit = isBuzme ? buzmeBonus : straightBonus;
+            
             await tx.tailorOrder.create({
               data: {
                 saleId: newSale.id,
@@ -302,9 +319,9 @@ router.post("/", requirePermission("sales:create"), async (req: Request, res: Re
                 customNote: item.tailorNote ?? null,
                 dueDate: item.tailorDueDate ? new Date(item.tailorDueDate) : null,
                 status: "WAITING",
-                stitchType: (item.buzmeFactor ?? 1) > 1 ? "buzme" : "straight",
-                bonusPerUnit: (item.buzmeFactor ?? 1) > 1 ? 0.06 : 0.03,
-                totalBonus: ((item.meters ?? 0) * ((item.buzmeFactor ?? 1) > 1 ? 0.06 : 0.03))
+                stitchType: isBuzme ? "buzme" : "straight",
+                bonusPerUnit: appliedBonusPerUnit,
+                totalBonus: (item.meters ?? 0) * appliedBonusPerUnit
               }
             });
           }
