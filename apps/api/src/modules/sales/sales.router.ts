@@ -116,6 +116,7 @@ router.post("/", requirePermission("sales:create"), async (req: Request, res: Re
     note?: string;
     receiptWidth?: string;
     createTailorOrders?: boolean;
+    sellerId?: string;
   };
 
   if (!items || items.length === 0) {
@@ -239,7 +240,7 @@ router.post("/", requirePermission("sales:create"), async (req: Request, res: Re
     const sale = await prisma.$transaction(async (tx) => {
       const newSale = await tx.sale.create({
         data: {
-          sellerId: (req as any).user?.id,
+          sellerId: req.body.sellerId || (req as any).user?.id,
           customerId: finalCustomerId ?? null,
           subtotal,
           discountPct: Number(discountPct),

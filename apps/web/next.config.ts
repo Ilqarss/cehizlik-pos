@@ -12,7 +12,15 @@ const nextConfig: NextConfig = {
       "@cehizlik/config": path.resolve(__dirname, "../../packages/config/src")
     };
     return config;
-  }
+  },
+  async rewrites() {
+    return [
+      {
+        source: "/api/:path*",
+        destination: "http://localhost:4000/api/:path*",
+      },
+    ];
+  },
 };
 
 export default nextConfig;

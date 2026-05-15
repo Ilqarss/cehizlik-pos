@@ -54,6 +54,14 @@ export default function SalesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [lastSale, setLastSale] = useState<{ saleNumber: string; total: number; debt: number; deposit: number; tailorName?: string } | null>(null);
   const [maxDiscountPct, setMaxDiscountPct] = useState<number | null>(null);
+  const [sellers, setSellers] = useState<{ id: string; fullName: string }[]>([]);
+  const [selectedSellerId, setSelectedSellerId] = useState("");
+
+  useEffect(() => {
+    if (user?.id && !selectedSellerId) {
+      setSelectedSellerId(user.id);
+    }
+  }, [user, selectedSellerId]);
 
   useEffect(() => {
     apiFetch<{ key: string; value: string } | null>("/settings/max_discount_pct")
@@ -62,6 +70,11 @@ export default function SalesPage() {
     // Dərziləri yüklə
     apiFetch<{ items: { id: string; fullName: string }[] }>("/tailor/tailors")
       .then(d => setTailors(d.items ?? []))
+      .catch(() => undefined);
+      
+    // Satıcıları yüklə
+    apiFetch<{ items: { id: string; fullName: string }[] }>("/users/sellers")
+      .then(d => setSellers(d.items ?? []))
       .catch(() => undefined);
   }, [apiFetch]);
 
@@ -162,7 +175,8 @@ export default function SalesPage() {
           deposit,
           note: saleNote,
           receiptWidth: "80mm",
-          createTailorOrders
+          createTailorOrders,
+          sellerId: selectedSellerId || user?.id
         })
       });
 
@@ -478,6 +492,21 @@ export default function SalesPage() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Satıcı */}
+              <div>
+                <p className="mb-2 text-sm font-semibold">Satıcı</p>
+                <select
+                  value={selectedSellerId}
+                  onChange={e => setSelectedSellerId(e.target.value)}
+                  className="h-10 w-full rounded-[16px] border border-[var(--border)] bg-white px-3 text-sm transition focus:border-[var(--primary)] focus:outline-none"
+                >
+                  <option value="">Seçin</option>
+                  {sellers.map(s => (
+                    <option key={s.id} value={s.id}>{s.fullName}</option>
+                  ))}
+                </select>
               </div>
 
               {/* Dərzi sifarişi - yalnız səbətdə pərdə varsa */}

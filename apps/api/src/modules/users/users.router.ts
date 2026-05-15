@@ -21,6 +21,19 @@ router.get("/", authenticate, requirePermission("users:read"), async (req: Reque
   }
 });
 
+router.get("/sellers", authenticate, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const sellers = await prisma.user.findMany({
+      where: { isActive: true, role: { in: ["SELLER", "ADMIN"] } },
+      select: { id: true, fullName: true, role: true },
+      orderBy: { fullName: "asc" }
+    });
+    res.json({ success: true, data: { items: sellers } });
+  } catch {
+    res.status(500).json({ success: false, error: "Server xətası" });
+  }
+});
+
 router.post("/", authenticate, requirePermission("users:write"), async (req: Request, res: Response): Promise<void> => {
   const { fullName, username, phone, password, role, commission } = req.body as {
     fullName?: string; username?: string; phone?: string; password?: string; role?: UserRole; commission?: number;
