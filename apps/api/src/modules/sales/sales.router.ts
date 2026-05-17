@@ -108,6 +108,7 @@ router.post("/", requirePermission("sales:create"), async (req: Request, res: Re
       quantity?: number;
       discountAmt?: number;
       tailorNote?: string; tailorModel?: string; tailorColor?: string; tailorDueDate?: string; tailorId?: string;
+      ustaId?: string; installationType?: string;
     }>;
     payments: Array<{ paymentType: string; amount: number; note?: string }>;
     discountPct?: number;
@@ -127,30 +128,33 @@ router.post("/", requirePermission("sales:create"), async (req: Request, res: Re
   // Ayarları yoxla (endirim limiti və dərzi bonusları)
   let straightBonus = 0.03;
   let buzmeBonus = 0.06;
+  let ustaStraightFee = 2;
+  let ustaCurvedFee = 5;
+  let ustaJalousieFee = 10;
+  
   try {
-    const [maxDiscountSetting, straightSetting, buzmeSetting] = await Promise.all([
+    const [maxDiscountSetting, straightSetting, buzmeSetting, ustaStraightSetting, ustaCurvedSetting, ustaJalousieSetting] = await Promise.all([
       prisma.setting.findUnique({ where: { key: "max_discount_pct" } }),
       prisma.setting.findUnique({ where: { key: "tailor_straight_bonus" } }),
-      prisma.setting.findUnique({ where: { key: "tailor_buzme_bonus" } })
+      prisma.setting.findUnique({ where: { key: "tailor_buzme_bonus" } }),
+      prisma.setting.findUnique({ where: { key: "usta_fee_straight_cornice" } }),
+      prisma.setting.findUnique({ where: { key: "usta_fee_curved_cornice" } }),
+      prisma.setting.findUnique({ where: { key: "usta_fee_jalousie" } })
     ]);
     
     if (maxDiscountSetting) {
       const maxPct = Number(maxDiscountSetting.value);
       if (!isNaN(maxPct) && Number(discountPct) > maxPct) {
-        res.status(400).json({
-          success: false,
-          error: `Endirim faizi maksimum ${maxPct}% ola bilər`
-        });
+        res.status(400).json({ success: false, error: `Endirim faizi maksimum ${maxPct}% ola bilər` });
         return;
       }
     }
     
-    if (straightSetting && !isNaN(Number(straightSetting.value))) {
-      straightBonus = Number(straightSetting.value);
-    }
-    if (buzmeSetting && !isNaN(Number(buzmeSetting.value))) {
-      buzmeBonus = Number(buzmeSetting.value);
-    }
+    if (straightSetting && !isNaN(Number(straightSetting.value))) straightBonus = Number(straightSetting.value);
+    if (buzmeSetting && !isNaN(Number(buzmeSetting.value))) buzmeBonus = Number(buzmeSetting.value);
+    if (ustaStraightSetting && !isNaN(Number(ustaStraightSetting.value))) ustaStraightFee = Number(ustaStraightSetting.value);
+    if (ustaCurvedSetting && !isNaN(Number(ustaCurvedSetting.value))) ustaCurvedFee = Number(ustaCurvedSetting.value);
+    if (ustaJalousieSetting && !isNaN(Number(ustaJalousieSetting.value))) ustaJalousieFee = Number(ustaJalousieSetting.value);
   } catch {
     // ayar tapılmasa keçir
   }
@@ -192,6 +196,18 @@ router.post("/", requirePermission("sales:create"), async (req: Request, res: Re
         lineTotal = qty * product.salePrice;
       }
 
+      let installationFeeAmt = 0;
+      if (item.ustaId && item.installationType) {
+        if (item.installationType === "STRAIGHT_CORNICE") {
+          installationFeeAmt = (item.meters ?? 1) * ustaStraightFee;
+        } else if (item.installationType === "CURVED_CORNICE") {
+          installationFeeAmt = (item.meters ?? 1) * ustaCurvedFee;
+        } else if (item.installationType === "JALOUSIE") {
+          installationFeeAmt = ustaJalousieFee; // 1 piece
+        }
+      }
+
+      lineTotal += installationFeeAmt;
       lineTotal -= item.discountAmt ?? 0;
       lineTotal = Math.max(lineTotal, 0);
       subtotal += lineTotal;
@@ -329,6 +345,36 @@ router.post("/", requirePermission("sales:create"), async (req: Request, res: Re
         }
       }
 
+      // Quraşdırma (Usta) sifarişi yarat
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const saleItem = newSale.items[i];
+        if (!saleItem) continue;
+        const product = productMap.get(item.productId);
+
+        if (item.ustaId && item.installationType) {
+          const isJalousie = item.installationType === "JALOUSIE";
+          const instQty = isJalousie ? (item.quantity ?? 1) : (item.meters ?? 1);
+          let feePerUnit = ustaStraightFee;
+          if (item.installationType === "CURVED_CORNICE") feePerUnit = ustaCurvedFee;
+          else if (item.installationType === "JALOUSIE") feePerUnit = ustaJalousieFee;
+          
+          await tx.installationOrder.create({
+            data: {
+              saleId: newSale.id,
+              saleItemId: saleItem.id,
+              ustaId: item.ustaId,
+              productId: product?.id,
+              installationType: item.installationType,
+              quantity: instQty,
+              feePerUnit: feePerUnit,
+              totalFee: instQty * feePerUnit,
+              status: "WAITING"
+            }
+          });
+        }
+      }
+
       return newSale;
     });
 
@@ -373,6 +419,82 @@ router.post("/:id/pay-debt", requirePermission("sales:create"), async (req: Requ
     res.json({ success: true, data: { newDebt, paid } });
   } catch {
     res.status(500).json({ success: false, error: "Ödəniş qeyd olunmadı" });
+  }
+});
+
+// ─── Satışı Ləğv Et (Qaytar) ──────────────────────────────────────────────────
+router.delete("/:id", requirePermission("sales:discount"), async (req: Request, res: Response): Promise<void> => {
+  // Use sales:discount (or a special admin permission) since the request specified "yalniz admin ede bilsin"
+  // Let's explicitly check user role for ADMIN
+  const userRole = (req as any).user?.role;
+  if (userRole !== "ADMIN") {
+    res.status(403).json({ success: false, error: "Bu əməliyyat yalnız Adminlər üçündür" });
+    return;
+  }
+
+  try {
+    const saleId = req.params.id;
+    const sale = await prisma.sale.findUnique({
+      where: { id: saleId },
+      include: { items: true, tailorOrders: true, installationOrders: true }
+    });
+
+    if (!sale) {
+      res.status(404).json({ success: false, error: "Satış tapılmadı" });
+      return;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Restore Stock
+      for (const item of sale.items) {
+        const product = await tx.product.findUnique({ where: { id: item.productId } });
+        if (product) {
+          const qtyToRestore = item.productNameSnap.includes("Pərdə") ? (item.meters ?? 1)
+            : item.productNameSnap.includes("Jalüz") ? Math.max((item.widthM ?? 1) * (item.heightM ?? 1), 1)
+            : item.quantity;
+          
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: qtyToRestore } }
+          });
+          
+          await tx.stockMovement.create({
+            data: {
+              productId: item.productId,
+              delta: qtyToRestore,
+              beforeStock: product.stock,
+              afterStock: product.stock + qtyToRestore,
+              reason: `Satış ləğvi - Qaytarılma (#${sale.saleNumber.slice(-8)})`,
+              referenceId: sale.id
+            }
+          });
+        }
+      }
+
+      // 2. Reduce Customer Debt
+      if (sale.customerId && sale.debt > 0) {
+        await tx.customer.update({
+          where: { id: sale.customerId },
+          data: { totalDebt: { decrement: sale.debt } }
+        });
+      }
+
+      // 3. Delete related Tailor and Installation orders explicitly (if needed due to missing cascade)
+      if (sale.tailorOrders.length > 0) {
+        await tx.tailorOrder.deleteMany({ where: { saleId: sale.id } });
+      }
+      if (sale.installationOrders.length > 0) {
+        await tx.installationOrder.deleteMany({ where: { saleId: sale.id } });
+      }
+
+      // 4. Delete the Sale (This cascades to SaleItem and SalePayment)
+      await tx.sale.delete({ where: { id: sale.id } });
+    });
+
+    res.json({ success: true, data: null });
+  } catch (err: any) {
+    console.error("[sales/delete]", err);
+    res.status(500).json({ success: false, error: "Satış ləğv edilmədi" });
   }
 });
 

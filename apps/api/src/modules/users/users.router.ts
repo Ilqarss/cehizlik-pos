@@ -5,7 +5,7 @@ import { prisma } from "../../db";
 import { authenticate, requirePermission } from "../../middleware/auth";
 
 const router = Router();
-const validRoles: UserRole[] = ["ADMIN", "SELLER", "TAILOR"];
+const validRoles: UserRole[] = ["ADMIN", "SELLER", "TAILOR", "USTA"];
 
 router.get("/", authenticate, requirePermission("users:read"), async (req: Request, res: Response): Promise<void> => {
   try {
@@ -29,6 +29,19 @@ router.get("/sellers", authenticate, async (req: Request, res: Response): Promis
       orderBy: { fullName: "asc" }
     });
     res.json({ success: true, data: { items: sellers } });
+  } catch {
+    res.status(500).json({ success: false, error: "Server xətası" });
+  }
+});
+
+router.get("/ustas", authenticate, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const ustas = await prisma.user.findMany({
+      where: { isActive: true, role: "USTA" },
+      select: { id: true, fullName: true, role: true },
+      orderBy: { fullName: "asc" }
+    });
+    res.json({ success: true, data: { items: ustas } });
   } catch {
     res.status(500).json({ success: false, error: "Server xətası" });
   }

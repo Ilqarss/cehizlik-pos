@@ -30,6 +30,11 @@ type TailorBonus = {
   completedCount: number; straightCount: number; buzmeCount: number;
   monthlyBreakdown: { month: string; bonus: number; meters: number; count: number }[];
 };
+type UstaEarning = {
+  id: string; fullName: string; totalFee: number; totalQuantity: number;
+  completedCount: number; straightCount: number; curvedCount: number; jalousieCount: number;
+  monthlyBreakdown: { month: string; fee: number; quantity: number; count: number }[];
+};
 
 type Sale = {
   id: string; saleNumber: string; total: number; debt: number; deposit: number;
@@ -43,6 +48,9 @@ export default function ReportsPage() {
   const { user } = useAuth();
   const apiFetch = useApi();
   const isAdmin = user?.role === "ADMIN";
+  const isSeller = user?.role === "SELLER";
+  const canViewAll = isAdmin || isSeller;
+  const isUsta = user?.role === "USTA";
 
   const [fromDate, setFromDate] = useState(monthStartStr());
   const [toDate, setToDate] = useState(todayStr());
@@ -50,10 +58,21 @@ export default function ReportsPage() {
   const [commissions, setCommissions] = useState<CommissionItem[]>([]);
   const [recentSales, setRecentSales] = useState<Sale[]>([]);
   const [tailorBonuses, setTailorBonuses] = useState<TailorBonus[]>([]);
+  const [ustaEarnings, setUstaEarnings] = useState<UstaEarning[]>([]);
   const [straightBonusRate, setStraightBonusRate] = useState("0.03");
   const [buzmeBonusRate, setBuzmeBonusRate] = useState("0.06");
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState<"summary" | "commissions" | "sales" | "tailor">("summary");
+  const [tab, setTab] = useState<"summary" | "commissions" | "sales" | "tailor" | "usta">("summary");
+
+  useEffect(() => {
+    if (isUsta) setTab("usta");
+  }, [isUsta]);
+
+  // Borc ödəmək üçün state
+  const [payDebtSale, setPayDebtSale] = useState<Sale | null>(null);
+  const [payDebtAmount, setPayDebtAmount] = useState("");
+  const [payDebtType, setPayDebtType] = useState("CASH");
+  const [paying, setPaying] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -61,25 +80,63 @@ export default function ReportsPage() {
 
     const tasks: Promise<void>[] = [];
 
-    if (isAdmin) {
+    if (canViewAll) {
       tasks.push(
         apiFetch<ProfitReport>(`/reports/profit${qp}`).then(setProfit).catch(() => undefined),
         apiFetch<{ items: CommissionItem[] }>(`/reports/commissions${qp}`).then(d => setCommissions(d.items)).catch(() => undefined),
-        apiFetch<{ items: TailorBonus[] }>("/reports/tailor-bonuses").then(d => setTailorBonuses(d.items)).catch(() => undefined),
+        apiFetch<{ items: TailorBonus[] }>(`/reports/tailor-bonuses?t=${Date.now()}`).then(d => setTailorBonuses(d.items)).catch(() => undefined),
         apiFetch<{ key: string; value: string } | null>("/settings/tailor_straight_bonus").then(d => { if (d?.value) setStraightBonusRate(d.value); }).catch(() => undefined),
         apiFetch<{ key: string; value: string } | null>("/settings/tailor_buzme_bonus").then(d => { if (d?.value) setBuzmeBonusRate(d.value); }).catch(() => undefined)
       );
     }
 
-    tasks.push(
-      apiFetch<{ items: Sale[] }>(`/sales?page=1&limit=50&from=${fromDate}T00:00:00&to=${toDate}T23:59:59`)
-        .then(d => setRecentSales(d.items)).catch(() => undefined)
-    );
+    if (canViewAll || isUsta) {
+      tasks.push(
+        apiFetch<{ items: UstaEarning[] }>(`/reports/usta-earnings?t=${Date.now()}`).then(d => setUstaEarnings(d.items)).catch(() => undefined)
+      );
+    }
+
+    if (!isUsta) {
+      tasks.push(
+        apiFetch<{ items: Sale[] }>(`/sales?page=1&limit=50&from=${fromDate}T00:00:00&to=${toDate}T23:59:59`)
+          .then(d => setRecentSales(d.items)).catch(() => undefined)
+      );
+    }
 
     Promise.all(tasks).finally(() => setLoading(false));
-  }, [apiFetch, fromDate, isAdmin, toDate]);
+  }, [apiFetch, fromDate, isAdmin, isUsta, toDate]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function handlePayDebt() {
+    if (!payDebtSale || !payDebtAmount) return;
+    setPaying(true);
+    try {
+      await apiFetch(`/sales/${payDebtSale.id}/pay-debt`, {
+        method: "POST",
+        body: JSON.stringify({ amount: Number(payDebtAmount), paymentType: payDebtType })
+      });
+      setPayDebtSale(null);
+      setPayDebtAmount("");
+      load(); // məlumatları yenilə
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Xəta baş verdi");
+    } finally {
+      setPaying(false);
+    }
+  }
+
+  async function handleDeleteSale(saleId: string, saleNumber: string) {
+    if (!isAdmin) return;
+    if (!confirm(`DİQQƏT!\n#${saleNumber.slice(-8)} nömrəli satışı ləğv etmək istədiyinizə əminsiniz?\n\nBu əməliyyat nəticəsində:\n- Məhsullar anbara geri qayıdacaq\n- Kassa və borc məlumatları sıfırlanacaq\n- Dərzi və Usta sifarişləri silinəcək\n\nBu əməliyyatı geri qaytarmaq MÜMKÜN DEYİL!`)) return;
+    
+    try {
+      await apiFetch(`/sales/${saleId}`, { method: "DELETE" });
+      load(); // Məlumatları yenilə
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Satış ləğv edilərkən xəta baş verdi");
+    }
+  }
 
   const totalDebt = recentSales.reduce((s, x) => s + x.debt, 0);
 
@@ -106,10 +163,11 @@ export default function ReportsPage() {
 
         <div className="flex gap-2 border-b border-[var(--border)] pb-1">
           {[
-            { key: "summary", label: "Maliyyə xülasəsi" },
-            ...(isAdmin ? [{ key: "commissions", label: "Komissiyalar" }] : []),
-            { key: "sales", label: "Satışlar" },
-            ...(isAdmin ? [{ key: "tailor", label: "Dərzi bonusları" }] : [])
+            ...(!isUsta ? [{ key: "summary", label: "Maliyyə xülasəsi" }] : []),
+            ...(canViewAll ? [{ key: "commissions", label: "Komissiyalar" }] : []),
+            ...(!isUsta ? [{ key: "sales", label: "Satışlar" }] : []),
+            ...(canViewAll ? [{ key: "tailor", label: "Dərzi bonusları" }] : []),
+            ...(canViewAll || isUsta ? [{ key: "usta", label: "Usta qazancı" }] : [])
           ].map(t => (
             <button key={t.key} onClick={() => setTab(t.key as typeof tab)}
               className={`px-4 py-2 text-sm font-semibold rounded-t-[14px] border border-b-0 transition ${tab === t.key ? "border-[var(--border)] bg-white text-[var(--primary)]" : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--primary)]"}`}>
@@ -122,18 +180,18 @@ export default function ReportsPage() {
           <div className="space-y-6">
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <KpiCard title="Ümumi gəlir" value={`₼ ${recentSales.reduce((s, x) => s + x.total, 0).toFixed(2)}`} subtitle={`${recentSales.length} satış`} tone="primary" />
-              {isAdmin && profit && (
+              {canViewAll && profit && (
                 <>
-                  <KpiCard title="Xalis mənfəət (satış)" value={`₼ ${profit.totalCostProfit.toFixed(2)}`} subtitle="Alış - satış fərqi" tone="success" />
-                  <KpiCard title="Ümumi xərc" value={`₼ ${profit.totalExpenses.toFixed(2)}`} subtitle="Xərc kateqoriyaları" tone="warning" />
-                  <KpiCard title="Xalis mənfəət" value={`₼ ${profit.netProfit.toFixed(2)}`} subtitle="Xərclərdən sonra" tone={profit.netProfit >= 0 ? "success" : "danger"} />
+                  <KpiCard title="Xalis mənfəət (satış)" value={`₼ ${profit.totalCostProfit?.toFixed(2) ?? '0.00'}`} subtitle="Alış - satış fərqi" tone="success" />
+                  <KpiCard title="Ümumi xərc" value={`₼ ${profit.totalExpenses?.toFixed(2) ?? '0.00'}`} subtitle="Xərc kateqoriyaları" tone="warning" />
+                  <KpiCard title="Xalis mənfəət" value={`₼ ${profit.netProfit?.toFixed(2) ?? '0.00'}`} subtitle="Xərclərdən sonra" tone={(profit.netProfit ?? 0) >= 0 ? "success" : "danger"} />
                   <KpiCard title="Ümumi endirim" value={`₼ ${(profit.totalDiscount ?? 0).toFixed(2)}`} subtitle="Verilmiş endirimlər cəmi" tone="accent" />
                 </>
               )}
               <KpiCard title="Ümumi borc" value={`₼ ${totalDebt.toFixed(2)}`} subtitle="Ödənilməmiş borcllar" tone={totalDebt > 0 ? "danger" : "success"} />
             </div>
 
-            {isAdmin && profit && (
+            {canViewAll && profit && (
               <div className="grid gap-6 lg:grid-cols-2 mt-6">
                 <Card>
                   <CardHeader>
@@ -148,7 +206,7 @@ export default function ReportsPage() {
                           <XAxis dataKey="date" tickFormatter={tick => tick.slice(5)} tick={{ fontSize: 12, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} />
                           <YAxis tick={{ fontSize: 12, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} tickFormatter={tick => `₼${tick}`} />
                           <Tooltip 
-                            formatter={(value: number, name: string) => [`₼ ${value.toFixed(2)}`, name === "revenue" ? "Gəlir" : "Mənfəət"]}
+                            formatter={(value: any, name: any) => [`₼ ${Number(value).toFixed(2)}`, name === "revenue" ? "Gəlir" : "Mənfəət"]}
                             labelFormatter={(label) => `Tarix: ${label}`}
                             contentStyle={{ borderRadius: "12px", border: "1px solid var(--border)", boxShadow: "0 4px 6px rgba(0,0,0,0.05)" }}
                           />
@@ -180,7 +238,7 @@ export default function ReportsPage() {
                             paddingAngle={3}
                             dataKey="amount"
                             nameKey="category"
-                            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                            label={({ name, percent }) => `${name} ${((percent||0) * 100).toFixed(0)}%`}
                             labelLine={false}
                             style={{ fontSize: "11px", fontWeight: "bold" }}
                           >
@@ -190,7 +248,7 @@ export default function ReportsPage() {
                             })}
                           </Pie>
                           <Tooltip 
-                            formatter={(value: number) => [`₼ ${value.toFixed(2)}`, "Xərc"]}
+                            formatter={(value: any) => [`₼ ${Number(value).toFixed(2)}`, "Xərc"]}
                             contentStyle={{ borderRadius: "12px", border: "1px solid var(--border)", boxShadow: "0 4px 6px rgba(0,0,0,0.05)" }}
                           />
                         </PieChart>
@@ -306,7 +364,7 @@ export default function ReportsPage() {
                     <tr className="border-b border-[var(--border)] bg-[var(--soft-navy)]/50">
                       <th className="px-4 py-3 text-left font-semibold">Çek #</th>
                       <th className="px-4 py-3 text-left font-semibold">Müştəri</th>
-                      {isAdmin && <th className="px-4 py-3 text-left font-semibold">Satıcı</th>}
+                      {canViewAll && <th className="px-4 py-3 text-left font-semibold">Satıcı</th>}
                       <th className="px-4 py-3 text-right font-semibold">Məbləğ</th>
                       <th className="px-4 py-3 text-right font-semibold">Endirim</th>
                       <th className="px-4 py-3 text-right font-semibold">Borc</th>
@@ -322,7 +380,7 @@ export default function ReportsPage() {
                       <tr key={s.id} className="border-b border-[var(--border)]/60 hover:bg-[var(--soft-navy)]/20">
                         <td className="px-4 py-3 font-mono text-xs text-[var(--muted-foreground)]">#{s.saleNumber.slice(-8)}</td>
                         <td className="px-4 py-3">{s.customer ? <span>{s.customer.name}<br/><span className="text-xs text-[var(--muted-foreground)]">{s.customer.phone}</span></span> : <span className="text-[var(--muted-foreground)]">—</span>}</td>
-                        {isAdmin && <td className="px-4 py-3">{s.seller?.fullName ?? "—"}</td>}
+                        {canViewAll && <td className="px-4 py-3">{s.seller?.fullName ?? "—"}</td>}
                         <td className="px-4 py-3 text-right font-semibold">₼ {s.total.toFixed(2)}</td>
                         <td className="px-4 py-3 text-right">
                           {totalDiscount > 0
@@ -330,9 +388,27 @@ export default function ReportsPage() {
                             : <span className="text-[var(--muted-foreground)]">—</span>}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          {s.debt > 0
-                            ? <Badge variant="destructive" className="text-xs">₼ {s.debt.toFixed(2)}</Badge>
-                            : <Badge variant="success" className="text-xs">Ödənilib</Badge>}
+                          <div className="flex flex-col items-end gap-1">
+                            {s.debt > 0 ? (
+                              <div className="flex flex-col items-end gap-1">
+                                <Badge variant="destructive" className="text-xs">₼ {s.debt.toFixed(2)}</Badge>
+                                <button onClick={() => { setPayDebtSale(s); setPayDebtAmount(s.debt.toString()); }}
+                                  className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-0.5 rounded-md hover:bg-emerald-100 transition">
+                                  Borcu ödə
+                                </button>
+                              </div>
+                            ) : (
+                              <Badge variant="success" className="text-xs">Ödənilib</Badge>
+                            )}
+                            
+                            {isAdmin && (
+                              <button onClick={() => handleDeleteSale(s.id, s.saleNumber)}
+                                className="text-[10px] mt-1 bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 rounded-md hover:bg-red-100 transition flex items-center gap-1">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                Ləğv et
+                              </button>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-right text-xs text-[var(--muted-foreground)]">
                           {new Date(s.soldAt).toLocaleDateString("az-AZ")}
@@ -398,7 +474,98 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
         )}
+
+        {tab === "usta" && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Usta Qazancları</CardTitle>
+              <CardDescription>Quraşdırma xidmətlərindən əldə olunan gəlirlər</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {ustaEarnings.length === 0 ? (
+                <p className="text-center text-[var(--muted-foreground)] py-8">Usta qazancı tapılmadı</p>
+              ) : ustaEarnings.map(u => (
+                <div key={u.id} className="mb-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold text-[var(--accent)]">{u.fullName}</h3>
+                    <div className="flex gap-4 text-sm">
+                      <span>Sifariş: <strong>{u.completedCount}</strong></span>
+                      <span className="hidden sm:inline">Düz: <strong>{u.straightCount}</strong> | Əyri: <strong>{u.curvedCount}</strong> | Jalüz: <strong>{u.jalousieCount}</strong></span>
+                      <span>M/Ədəd: <strong>{u.totalQuantity.toFixed(1)}</strong></span>
+                      <span className="text-[var(--accent)] font-bold">Ümumi: ₼ {u.totalFee.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  {u.monthlyBreakdown.length > 0 && (
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-[var(--border)] bg-[var(--soft-navy)]/50">
+                          <th className="px-4 py-2 text-left font-semibold">Ay</th>
+                          <th className="px-4 py-2 text-right font-semibold">Sifariş</th>
+                          <th className="px-4 py-2 text-right font-semibold">M/Ədəd</th>
+                          <th className="px-4 py-2 text-right font-semibold">Qazanc</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {u.monthlyBreakdown.map(m => {
+                          const monthNames: Record<string, string> = {"01":"Yanvar","02":"Fevral","03":"Mart","04":"Aprel","05":"May","06":"İyun","07":"İyul","08":"Avqust","09":"Sentyabr","10":"Oktyabr","11":"Noyabr","12":"Dekabr"};
+                          const [y, mm] = m.month.split("-");
+                          return (
+                            <tr key={m.month} className="border-b border-[var(--border)]/60">
+                              <td className="px-4 py-2">{monthNames[mm] || mm} {y}</td>
+                              <td className="px-4 py-2 text-right">{m.count}</td>
+                              <td className="px-4 py-2 text-right">{m.quantity.toFixed(1)}</td>
+                              <td className="px-4 py-2 text-right text-[var(--accent)] font-semibold">₼ {m.fee.toFixed(2)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      {/* Borc Ödəmə Modalı */}
+      {payDebtSale && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(10,18,40,0.6)]">
+          <Card className="glass-panel w-full max-w-sm mx-4">
+            <CardHeader>
+              <CardTitle className="text-lg">Borc Ödənişi</CardTitle>
+              <CardDescription>
+                Çek: #{payDebtSale.saleNumber.slice(-8)} <br/>
+                Müştəri: {payDebtSale.customer?.name ?? "Bilinmir"} <br/>
+                Qalan borc: <strong className="text-[var(--danger)]">₼ {payDebtSale.debt.toFixed(2)}</strong>
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold">Ödəniş növü</label>
+                <select value={payDebtType} onChange={e => setPayDebtType(e.target.value)}
+                  className="mt-1 h-10 w-full rounded-2xl border border-[var(--border)] bg-white px-3 text-sm">
+                  <option value="CASH">Nağd</option>
+                  <option value="CARD">Kart</option>
+                  <option value="TRANSFER">Köçürmə</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold">Ödənilən məbləğ</label>
+                <Input type="number" step="0.01" max={payDebtSale.debt} value={payDebtAmount} onChange={e => setPayDebtAmount(e.target.value)} className="mt-1" />
+              </div>
+              <div className="flex gap-2">
+                <Button className="flex-1" onClick={handlePayDebt} disabled={paying}>
+                  {paying ? "Gözləyin..." : "Təsdiqlə"}
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => setPayDebtSale(null)} disabled={paying}>
+                  Ləğv et
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </DashboardShell>
   );
 }

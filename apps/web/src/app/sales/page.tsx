@@ -7,11 +7,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 import { Input } from "../../components/ui/input";
 import { DashboardShell } from "../../components/layout/dashboard-shell";
 import { useApi, useAuth } from "../../lib/auth/auth-context";
-import { BUZME_FACTORS, PAYMENT_LABELS, PRODUCT_TYPE_LABELS, type BuzmeFactor, type PaymentType } from "@cehizlik/types";
+import { BUZME_FACTORS, PAYMENT_LABELS, PRODUCT_TYPE_LABELS, INSTALLATION_TYPE_LABELS, type BuzmeFactor, type PaymentType, type InstallationType } from "@cehizlik/types";
 
 type Product = {
   id: string; code: string; nameAz: string;
-  productType: "CURTAIN" | "JALOUSIE" | "OTHER";
+  productType: "CURTAIN" | "JALOUSIE" | "CORNICE" | "OTHER";
   unit: string; salePrice: number; stock: number;
 };
 
@@ -30,6 +30,9 @@ type CartItem = {
   tailorModel?: string;
   tailorDueDate?: string;
   tailorId?: string;
+  ustaId?: string;
+  installationType?: InstallationType;
+  installationFeeAmt?: number;
 };
 
 type Customer = { id: string; name: string; phone: string; totalDebt: number };
@@ -52,10 +55,12 @@ export default function SalesPage() {
   const [createTailorOrders, setCreateTailorOrders] = useState(false);
   const [tailors, setTailors] = useState<{ id: string; fullName: string }[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [lastSale, setLastSale] = useState<{ saleNumber: string; total: number; debt: number; deposit: number; tailorName?: string } | null>(null);
+  const [lastSale, setLastSale] = useState<any>(null);
   const [maxDiscountPct, setMaxDiscountPct] = useState<number | null>(null);
   const [sellers, setSellers] = useState<{ id: string; fullName: string }[]>([]);
+  const [ustas, setUstas] = useState<{ id: string; fullName: string }[]>([]);
   const [selectedSellerId, setSelectedSellerId] = useState("");
+  const [ustaFees, setUstaFees] = useState({ straight: 2, curved: 5, jalousie: 10 });
 
   useEffect(() => {
     if (user?.id && !selectedSellerId) {
@@ -72,6 +77,24 @@ export default function SalesPage() {
       .then(d => setTailors(d.items ?? []))
       .catch(() => undefined);
       
+    // Usta yüklə
+    apiFetch<{ items: { id: string; fullName: string }[] }>("/users/ustas")
+      .then(d => setUstas(d.items ?? []))
+      .catch(() => undefined);
+      
+    // Usta qiymətləri
+    Promise.all([
+      apiFetch<{ value: string }>("/settings/usta_fee_straight_cornice").catch(() => null),
+      apiFetch<{ value: string }>("/settings/usta_fee_curved_cornice").catch(() => null),
+      apiFetch<{ value: string }>("/settings/usta_fee_jalousie").catch(() => null)
+    ]).then(([s, c, j]) => {
+      setUstaFees({
+        straight: s?.value ? Number(s.value) : 2,
+        curved: c?.value ? Number(c.value) : 5,
+        jalousie: j?.value ? Number(j.value) : 10
+      });
+    });
+
     // Satıcıları yüklə
     apiFetch<{ items: { id: string; fullName: string }[] }>("/users/sellers")
       .then(d => setSellers(d.items ?? []))
@@ -110,7 +133,9 @@ export default function SalesPage() {
       widthM: product.productType === "JALOUSIE" ? 1 : undefined,
       heightM: product.productType === "JALOUSIE" ? 1 : undefined,
       discountAmt: 0,
-      lineTotal: 0
+      lineTotal: 0,
+      installationFeeAmt: 0,
+      installationType: product.productType === "JALOUSIE" ? "JALOUSIE" : undefined
     };
     setCart(prev => [...prev, calcItem(item)]);
     setProductSearch("");
@@ -125,11 +150,22 @@ export default function SalesPage() {
     } else if (item.product.productType === "JALOUSIE" && item.widthM && item.heightM) {
       squareM = Math.max(item.widthM * item.heightM, 1);
       lineTotal = squareM * item.product.salePrice;
+    } else if (item.product.productType === "CORNICE" && item.meters) {
+      lineTotal = item.meters * item.product.salePrice;
     } else {
       lineTotal = (item.quantity ?? 1) * item.product.salePrice;
     }
+    
+    let instFee = 0;
+    if (item.ustaId && item.installationType) {
+      if (item.installationType === "STRAIGHT_CORNICE") instFee = (item.meters ?? 1) * ustaFees.straight;
+      else if (item.installationType === "CURVED_CORNICE") instFee = (item.meters ?? 1) * ustaFees.curved;
+      else if (item.installationType === "JALOUSIE") instFee = ustaFees.jalousie; // 1 piece
+    }
+
+    lineTotal += instFee;
     lineTotal = Math.max(lineTotal - (item.discountAmt ?? 0), 0);
-    return { ...item, lineTotal, squareM };
+    return { ...item, lineTotal, squareM, installationFeeAmt: instFee };
   }
 
   function updateItem(key: string, patch: Partial<CartItem>) {
@@ -148,6 +184,15 @@ export default function SalesPage() {
 
   async function handleSubmit() {
     if (cart.length === 0) { alert("Səbət boşdur"); return; }
+    
+    // Validation
+    for (const item of cart) {
+      if (item.product.productType === "CORNICE" && item.ustaId && !item.installationType) {
+        alert(`Diqqət: "${item.product.nameAz}" üçün usta seçmisiniz, lakin karniz növünü (Düz/Əyri) seçməmisiniz. Zəhmət olmasa növü seçin.`);
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const result = await apiFetch<{ saleNumber: string; total: number; debt: number }>("/sales", {
@@ -167,7 +212,9 @@ export default function SalesPage() {
             tailorNote: item.tailorNote,
             tailorModel: item.tailorModel,
             tailorDueDate: item.tailorDueDate,
-            tailorId: item.tailorId
+            tailorId: item.tailorId,
+            ustaId: item.ustaId,
+            installationType: item.installationType
           })),
           payments: [{ paymentType, amount: 0 }],
           discountPct,
@@ -182,7 +229,16 @@ export default function SalesPage() {
 
       const selectedTailor = cart.find(i => i.tailorId)?.tailorId;
       const tailorName = selectedTailor ? tailors.find(t => t.id === selectedTailor)?.fullName : undefined;
-      setLastSale({ ...result, deposit, tailorName });
+      setLastSale({ 
+        ...result, 
+        deposit, 
+        tailorName, 
+        items: [...cart], 
+        customerName, 
+        customerPhone,
+        paymentType,
+        sellerName: sellers.find(s => s.id === (selectedSellerId || user?.id))?.fullName || user?.fullName || ""
+      });
       setCart([]);
       setCustomerPhone("");
       setCustomerName("");
@@ -200,15 +256,42 @@ export default function SalesPage() {
 
   function printReceipt() {
     if (!lastSale) return;
+    
+    function toLatin(str: string): string {
+      if (!str) return "";
+      const az: Record<string, string> = { 'ə': 'e', 'Ə': 'E', 'ş': 's', 'Ş': 'S', 'ç': 'c', 'Ç': 'C', 'ğ': 'g', 'Ğ': 'G', 'ö': 'o', 'Ö': 'O', 'ü': 'u', 'Ü': 'U', 'ı': 'i', 'İ': 'I' };
+      return str.replace(/[əƏşŞçÇğĞöÖüÜıİ]/g, match => az[match] || match);
+    }
+
     const now = new Date();
     const d = now.toLocaleDateString("az-AZ");
     const t = now.toLocaleTimeString("az-AZ", {hour:"2-digit",minute:"2-digit"});
     const s = "------------------------------";
-    const items = cart.map((item, i) => {
+    
+    const items = (lastSale.items || []).map((item: CartItem, i: number) => {
       const nm = item.product.nameAz.length > 20 ? item.product.nameAz.slice(0,20) + ".." : item.product.nameAz;
-      const det = item.product.productType === "CURTAIN" ? (item.meters??0)+"m x"+(item.buzmeFactor??1) : item.product.productType === "JALOUSIE" ? (item.widthM??0)+"x"+(item.heightM??0)+"m" : (item.quantity??1)+"ed";
-      return `<div class="r"><span>${i+1}.${nm}</span></div><div class="r"><span>  ${det}</span><span>${item.lineTotal.toFixed(2)}</span></div>`;
+      const det = item.product.productType === "CURTAIN" ? (item.meters??0)+"m x"+(item.buzmeFactor??1) 
+                : item.product.productType === "JALOUSIE" ? (item.widthM??0)+"x"+(item.heightM??0)+"m" 
+                : (item.quantity??1)+"ed";
+      
+      let html = `<div class="r"><span>${i+1}.${toLatin(nm)}</span></div>
+                  <div class="r"><span>  ${det} x ${item.product.salePrice}AZN</span><span>${item.lineTotal.toFixed(2)}</span></div>`;
+      
+      if (item.discountAmt > 0) {
+        html += `<div class="r" style="font-size:6pt; color:#444;"><span>  - Endirim</span><span>-${item.discountAmt.toFixed(2)}</span></div>`;
+      }
+      if (item.ustaId && item.installationFeeAmt) {
+        html += `<div class="r" style="font-size:6pt; color:#444;"><span>  - Usta qurasdirma</span><span>Daxildir</span></div>`;
+      }
+      return html;
     }).join("");
+
+    const paymentTypeStr = lastSale.paymentType === "CARD" ? "Kart" : lastSale.paymentType === "TRANSFER" ? "Kocurme" : "Nagd";
+    
+    // Subtotal in lastSale does not include discount.
+    const subtotal = lastSale.items?.reduce((acc: number, it: CartItem) => acc + (it.lineTotal + it.discountAmt), 0) || lastSale.total;
+    const totalDiscount = subtotal - lastSale.total;
+
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
     <style>
       @page{size:58mm auto;margin:0!important;}
@@ -220,28 +303,30 @@ export default function SalesPage() {
       .big{font-size:9pt;font-weight:bold;}
     </style></head><body>
       <div class="c b" style="font-size:11pt;">IL & AY</div>
-      <div class="c" style="font-size:6pt;">Perde & Jaluz magazasi</div>
+      <div class="c" style="font-size:6pt;">PERDE VE JALUZ MAGAZASI</div>
       <div>${s}</div>
       <div class="r"><span>Cek:</span><span>#${lastSale.saleNumber.slice(-8)}</span></div>
       <div class="r"><span>${d}</span><span>${t}</span></div>
-      <div class="r"><span>Satici:</span><span>${(user?.fullName??"").slice(0,16)}</span></div>
-      ${customerName?`<div class="r"><span>Must:</span><span>${customerName.slice(0,18)}</span></div>`:""}
-      ${customerPhone?`<div class="r"><span>Tel:</span><span>${customerPhone}</span></div>`:""}
+      <div class="r"><span>Satici:</span><span>${toLatin(lastSale.sellerName || (user?.fullName ?? "")).slice(0,16)}</span></div>
+      ${lastSale.customerName ? `<div class="r"><span>Must:</span><span>${toLatin(lastSale.customerName).slice(0,18)}</span></div>` : ""}
+      ${lastSale.customerPhone ? `<div class="r"><span>Tel:</span><span>${lastSale.customerPhone}</span></div>` : ""}
       <div>${s}</div>
       ${items}
       <div>${s}</div>
-      <div class="r big"><span>YEKUN:</span><span>${lastSale.total.toFixed(2)} AZN</span></div>
-      ${lastSale.deposit>0?`<div class="r"><span>Beh:</span><span>${lastSale.deposit.toFixed(2)}</span></div>`:""}
-      <div class="r b"><span>Borc:</span><span>${lastSale.debt.toFixed(2)} AZN</span></div>
-      ${lastSale.tailorName?`<div class="r"><span>Derzi:</span><span>${lastSale.tailorName}</span></div>`:""}
+      <div class="r"><span>Yekun:</span><span>${subtotal.toFixed(2)} AZN</span></div>
+      ${totalDiscount > 0 ? `<div class="r"><span>Endirim:</span><span>-${totalDiscount.toFixed(2)} AZN</span></div>` : ""}
+      <div class="r big"><span>ODENILECEK:</span><span>${lastSale.total.toFixed(2)} AZN</span></div>
+      <div>${s}</div>
+      ${lastSale.deposit > 0 ? `<div class="r"><span>Odenildi (${paymentTypeStr}):</span><span>${lastSale.deposit.toFixed(2)} AZN</span></div>` : `<div class="r"><span>Odenis novu:</span><span>${paymentTypeStr}</span></div>`}
+      ${lastSale.debt > 0 ? `<div class="r big"><span>Qaliq Borc:</span><span>${lastSale.debt.toFixed(2)} AZN</span></div>` : ""}
+      ${lastSale.tailorName ? `<div class="r"><span>Derzi:</span><span>${toLatin(lastSale.tailorName)}</span></div>` : ""}
       <div>${s}</div>
       <div class="c b" style="font-size:6pt;">* Kesilen mal geri qaytarilmir *</div>
-      <div>${s}</div>
-      <div class="c" style="font-size:7pt;">Tesekkurler!</div>
+      <div class="c" style="font-size:7pt;">Bizi secdiyiniz ucun tesekkurler!</div>
       <div class="c b" style="font-size:7pt;">Tel: 050 385 99 96</div>
       <div>${s}</div>
       <div style="height:50mm;"></div>
-    <script>window.onload=()=>{window.print();setTimeout(()=>window.close(),500)}<\/script>
+      <script>window.onload=()=>{window.print();setTimeout(()=>window.close(),500)}<\\/script>
     </body></html>`;
     const win = window.open("","_blank","width=300,height=400");
     win?.document.write(html);
@@ -398,6 +483,49 @@ export default function SalesPage() {
                         <Input type="number" min="1" step="1" value={item.quantity ?? 1}
                           onChange={e => updateItem(item.key, { quantity: Number(e.target.value) })}
                           className="mt-1 h-9 text-sm" />
+                      </div>
+                    )}
+                    
+                    {/* Karniz üçün metraj */}
+                    {item.product.productType === "CORNICE" && (
+                      <div className="mt-3 sm:w-36">
+                        <label className="text-xs font-semibold">Metr</label>
+                        <Input type="number" min="0.5" step="0.5" value={item.meters ?? 1}
+                          onChange={e => updateItem(item.key, { meters: Number(e.target.value) })}
+                          className="mt-1 h-9 text-sm" />
+                      </div>
+                    )}
+                    
+                    {/* Quraşdırma (Usta) Seçimi (Karniz/Jalüz) */}
+                    {(item.product.productType === "CORNICE" || item.product.productType === "JALOUSIE") && ustas.length > 0 && (
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 items-end rounded-[16px] bg-[var(--soft-navy)]/20 p-2 border border-[var(--border)]/50">
+                        <div className="w-full">
+                          <label className="text-xs font-semibold text-[var(--primary)] flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                            Usta seçin
+                          </label>
+                          <select value={item.ustaId ?? ""} onChange={e => updateItem(item.key, { ustaId: e.target.value })}
+                            className="mt-1 h-8 w-full rounded-xl border border-[var(--border)] bg-white px-2 text-xs">
+                            <option value="">İstəmirəm</option>
+                            {ustas.map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                          </select>
+                        </div>
+                        {item.ustaId && item.product.productType === "CORNICE" && (
+                          <div className="w-full">
+                            <label className="text-xs font-semibold text-[var(--muted-foreground)]">Karniz Növü</label>
+                            <select value={item.installationType ?? ""} onChange={e => updateItem(item.key, { installationType: e.target.value as InstallationType })}
+                              className="mt-1 h-8 w-full rounded-xl border border-[var(--border)] bg-white px-2 text-xs">
+                              <option value="">Seçin...</option>
+                              <option value="STRAIGHT_CORNICE">Düz ({ustaFees.straight} ₼/m)</option>
+                              <option value="CURVED_CORNICE">Əyri ({ustaFees.curved} ₼/m)</option>
+                            </select>
+                          </div>
+                        )}
+                        {item.ustaId && item.installationType && (
+                          <div className="w-full text-xs font-semibold text-right sm:text-left self-center">
+                            + ₼ {item.installationFeeAmt?.toFixed(2)} quraşdırma
+                          </div>
+                        )}
                       </div>
                     )}
 

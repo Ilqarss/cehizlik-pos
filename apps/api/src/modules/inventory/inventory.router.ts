@@ -86,7 +86,7 @@ router.post("/", requirePermission("inventory:write"), async (req: Request, res:
       data: {
         code: finalCode,
         nameAz: String(nameAz),
-        productType: String(productType ?? "OTHER") as "CURTAIN" | "JALOUSIE" | "OTHER",
+        productType: String(productType ?? "OTHER") as "CURTAIN" | "JALOUSIE" | "CORNICE" | "OTHER",
         unit: String(unit ?? "ədəd"),
         costPrice: Number(costPrice ?? 0),
         marginPct: Number(marginPct ?? 0),
@@ -127,7 +127,7 @@ router.patch("/:id", requirePermission("inventory:write"), async (req: Request, 
       where: { id: req.params.id },
       data: {
         nameAz: nameAz ? String(nameAz) : undefined,
-        productType: productType ? String(productType) as "CURTAIN" | "JALOUSIE" | "OTHER" : undefined,
+        productType: productType ? String(productType) as "CURTAIN" | "JALOUSIE" | "CORNICE" | "OTHER" : undefined,
         unit: unit ? String(unit) : undefined,
         costPrice: costPrice !== undefined ? Number(costPrice) : undefined,
         marginPct: marginPct !== undefined ? Number(marginPct) : undefined,
@@ -204,7 +204,7 @@ router.post("/import", requirePermission("inventory:import"), async (req: Reques
             salePrice: Number(row.salePrice),
             stock: Number(row.stock ?? 0),
             unit: row.unit ?? "ədəd",
-            productType: (row.productType ?? "OTHER") as "CURTAIN" | "JALOUSIE" | "OTHER"
+            productType: (row.productType ?? "OTHER") as "CURTAIN" | "JALOUSIE" | "CORNICE" | "OTHER"
           }
         });
         updated++;
@@ -213,7 +213,7 @@ router.post("/import", requirePermission("inventory:import"), async (req: Reques
           data: {
             code: String(row.code),
             nameAz: row.nameAz,
-            productType: (row.productType ?? "OTHER") as "CURTAIN" | "JALOUSIE" | "OTHER",
+            productType: (row.productType ?? "OTHER") as "CURTAIN" | "JALOUSIE" | "CORNICE" | "OTHER",
             unit: row.unit ?? "ədəd",
             costPrice: Number(row.costPrice ?? 0),
             marginPct: Number(row.marginPct ?? 0),

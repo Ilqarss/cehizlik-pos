@@ -8,9 +8,9 @@ datasource db {
 }
 
 // ─── Qeyd: SQLite enum dəstəkləmir – String + tətbiq səviyyəsindəki yoxlama ─
-// ADMIN, SELLER, TAILOR
-// WAITING, IN_PROGRESS, READY
-// CURTAIN, JALOUSIE, OTHER
+// ADMIN, SELLER, TAILOR, USTA
+// WAITING, IN_PROGRESS, READY, COMPLETED
+// CURTAIN, JALOUSIE, CORNICE, OTHER
 // CASH, CARD, TRANSFER
 
 model User {
@@ -19,7 +19,7 @@ model User {
   username     String    @unique
   phone        String    @unique
   passwordHash String
-  role         String    @default("SELLER")  // ADMIN | SELLER | TAILOR
+  role         String    @default("SELLER")  // ADMIN | SELLER | TAILOR | USTA
   commission   Float     @default(0)
   isActive     Boolean   @default(true)
   lastLoginAt  DateTime?
@@ -30,6 +30,7 @@ model User {
   sales        Sale[]
   tailorOrders TailorOrder[]
   expenses     Expense[]
+  installationOrders InstallationOrder[]
 
   @@map("users")
 }
@@ -50,7 +51,7 @@ model Product {
   id           String   @id @default(cuid())
   code         String   @unique
   nameAz       String
-  productType  String   @default("OTHER")   // CURTAIN | JALOUSIE | OTHER
+  productType  String   @default("OTHER")   // CURTAIN | JALOUSIE | CORNICE | OTHER
   unit         String   @default("ədəd")
   costPrice    Float    @default(0)
   marginPct    Float    @default(0)
@@ -64,6 +65,7 @@ model Product {
   saleItems    SaleItem[]
   movements    StockMovement[]
   tailorOrders TailorOrder[]
+  installationOrders InstallationOrder[]
 
   @@map("products")
 }
@@ -136,6 +138,7 @@ model Sale {
   items        SaleItem[]
   payments     SalePayment[]
   tailorOrders TailorOrder[]
+  installationOrders InstallationOrder[]
 
   @@index([sellerId, soldAt])
   @@map("sales")
@@ -163,6 +166,7 @@ model SaleItem {
   sale            Sale        @relation(fields: [saleId], references: [id], onDelete: Cascade)
   product         Product     @relation(fields: [productId], references: [id])
   tailorOrder     TailorOrder?
+  installationOrder InstallationOrder?
 
   @@index([saleId])
   @@map("sale_items")
@@ -225,6 +229,29 @@ model Expense {
 
   @@index([expenseDate])
   @@map("expenses")
+}
+
+model InstallationOrder {
+  id              String   @id @default(cuid())
+  saleId          String?
+  saleItemId      String?  @unique
+  ustaId          String?
+  productId       String?
+  installationType String  // "STRAIGHT_CORNICE" | "CURVED_CORNICE" | "JALOUSIE"
+  quantity        Float    // meters or pieces
+  feePerUnit      Float    // configurable per unit (2, 5, 10 etc.)
+  totalFee        Float    @default(0)
+  status          String   @default("WAITING") // WAITING | COMPLETED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  sale            Sale?     @relation(fields: [saleId], references: [id])
+  saleItem        SaleItem? @relation(fields: [saleItemId], references: [id])
+  usta            User?     @relation(fields: [ustaId], references: [id])
+  product         Product?  @relation(fields: [productId], references: [id])
+
+  @@index([ustaId, status])
+  @@map("installation_orders")
 }
 
 model Setting {

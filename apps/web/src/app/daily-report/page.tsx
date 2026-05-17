@@ -15,6 +15,7 @@ type DailyPrintData = {
   totalCard: number;
   totalTransfer: number;
   totalExpenses: number;
+  totalUstaFees: number;
   netCash: number;
   salesCount: number;
   sales: { saleNumber: string; total: number; deposit: number; debt: number; sellerName: string; time: string }[];
@@ -83,6 +84,10 @@ export default function DailyReportPage() {
               <div className="flex justify-between border-b border-gray-200 py-1">
                 <span className="font-semibold">Alınan Behlər/Ödənişlər (Ümumi):</span>
                 <span>₼ {data.totalDeposit.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between border-b border-gray-200 py-1">
+                <span className="font-semibold text-blue-700">Usta Qazancı (Ödəniləcək):</span>
+                <span className="text-blue-700 font-bold">₼ {data.totalUstaFees.toFixed(2)}</span>
               </div>
             </div>
 

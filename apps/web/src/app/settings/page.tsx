@@ -17,6 +17,10 @@ export default function SettingsPage() {
   const [tailorStraightBonus, setTailorStraightBonus] = useState("0.03");
   const [tailorBuzmeBonus, setTailorBuzmeBonus] = useState("0.06");
   
+  const [ustaStraightFee, setUstaStraightFee] = useState("2");
+  const [ustaCurvedFee, setUstaCurvedFee] = useState("5");
+  const [ustaJalousieFee, setUstaJalousieFee] = useState("10");
+  
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -28,11 +32,17 @@ export default function SettingsPage() {
     Promise.all([
       apiFetch<{ key: string; value: string } | null>("/settings/max_discount_pct").catch(() => null),
       apiFetch<{ key: string; value: string } | null>("/settings/tailor_straight_bonus").catch(() => null),
-      apiFetch<{ key: string; value: string } | null>("/settings/tailor_buzme_bonus").catch(() => null)
-    ]).then(([d1, d2, d3]) => {
+      apiFetch<{ key: string; value: string } | null>("/settings/tailor_buzme_bonus").catch(() => null),
+      apiFetch<{ key: string; value: string } | null>("/settings/usta_fee_straight_cornice").catch(() => null),
+      apiFetch<{ key: string; value: string } | null>("/settings/usta_fee_curved_cornice").catch(() => null),
+      apiFetch<{ key: string; value: string } | null>("/settings/usta_fee_jalousie").catch(() => null)
+    ]).then(([d1, d2, d3, u1, u2, u3]) => {
       if (d1?.value) setMaxDiscountPct(d1.value);
       if (d2?.value) setTailorStraightBonus(d2.value);
       if (d3?.value) setTailorBuzmeBonus(d3.value);
+      if (u1?.value) setUstaStraightFee(u1.value);
+      if (u2?.value) setUstaCurvedFee(u2.value);
+      if (u3?.value) setUstaJalousieFee(u3.value);
     });
   }, [apiFetch]);
 
@@ -42,13 +52,20 @@ export default function SettingsPage() {
     const val = Number(maxDiscountPct);
     const straightVal = Number(tailorStraightBonus);
     const buzmeVal = Number(tailorBuzmeBonus);
+    const ustaS = Number(ustaStraightFee);
+    const ustaC = Number(ustaCurvedFee);
+    const ustaJ = Number(ustaJalousieFee);
 
     if (isNaN(val) || val < 0 || val > 100) {
       alert("Endirim faizi 0-100 arasında olmalıdır");
       return;
     }
     if (isNaN(straightVal) || straightVal < 0 || isNaN(buzmeVal) || buzmeVal < 0) {
-      alert("Bonus məbləğləri düzgün deyil");
+      alert("Dərzi bonus məbləğləri düzgün deyil");
+      return;
+    }
+    if (isNaN(ustaS) || ustaS < 0 || isNaN(ustaC) || ustaC < 0 || isNaN(ustaJ) || ustaJ < 0) {
+      alert("Usta qiymətləri düzgün deyil");
       return;
     }
 
@@ -57,7 +74,10 @@ export default function SettingsPage() {
       await Promise.all([
         apiFetch("/settings/max_discount_pct", { method: "PUT", body: JSON.stringify({ value: String(val) }) }),
         apiFetch("/settings/tailor_straight_bonus", { method: "PUT", body: JSON.stringify({ value: String(straightVal) }) }),
-        apiFetch("/settings/tailor_buzme_bonus", { method: "PUT", body: JSON.stringify({ value: String(buzmeVal) }) })
+        apiFetch("/settings/tailor_buzme_bonus", { method: "PUT", body: JSON.stringify({ value: String(buzmeVal) }) }),
+        apiFetch("/settings/usta_fee_straight_cornice", { method: "PUT", body: JSON.stringify({ value: String(ustaS) }) }),
+        apiFetch("/settings/usta_fee_curved_cornice", { method: "PUT", body: JSON.stringify({ value: String(ustaC) }) }),
+        apiFetch("/settings/usta_fee_jalousie", { method: "PUT", body: JSON.stringify({ value: String(ustaJ) }) })
       ]);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -135,6 +155,39 @@ export default function SettingsPage() {
                     onChange={e => setTailorBuzmeBonus(e.target.value)}
                     className="mt-1"
                     placeholder="0.06"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-[var(--border)]">
+              <label className="text-sm font-semibold">Usta Quraşdırma Qiymətləri (AZN)</label>
+              <p className="text-xs text-[var(--muted-foreground)] mb-4">
+                Usta üçün hesablanan quraşdırma qiymətlərini təyin edin.
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-w-lg">
+                <div>
+                  <label className="text-xs font-semibold text-[var(--muted-foreground)]">Düz Karniz (1m)</label>
+                  <Input
+                    type="number" min="0" step="1"
+                    value={ustaStraightFee} onChange={e => setUstaStraightFee(e.target.value)}
+                    className="mt-1" placeholder="2"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-[var(--muted-foreground)]">Əyri Karniz (1m)</label>
+                  <Input
+                    type="number" min="0" step="1"
+                    value={ustaCurvedFee} onChange={e => setUstaCurvedFee(e.target.value)}
+                    className="mt-1" placeholder="5"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-[var(--muted-foreground)]">Jalüz (1 ədəd)</label>
+                  <Input
+                    type="number" min="0" step="1"
+                    value={ustaJalousieFee} onChange={e => setUstaJalousieFee(e.target.value)}
+                    className="mt-1" placeholder="10"
                   />
                 </div>
               </div>

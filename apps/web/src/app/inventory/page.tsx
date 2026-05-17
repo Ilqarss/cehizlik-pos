@@ -13,7 +13,7 @@ type Product = {
   id: string;
   code: string;
   nameAz: string;
-  productType: "CURTAIN" | "JALOUSIE" | "OTHER";
+  productType: "CURTAIN" | "JALOUSIE" | "CORNICE" | "OTHER";
   unit: string;
   salePrice: number;
   costPrice?: number;
@@ -118,6 +118,7 @@ export default function InventoryPage() {
       const pt = String(row.productType).toUpperCase();
       if (pt.includes("PERD") || pt.includes("CURTAIN")) row.productType = "CURTAIN";
       else if (pt.includes("JAL")) row.productType = "JALOUSIE";
+      else if (pt.includes("KARN") || pt.includes("CORN")) row.productType = "CORNICE";
       else row.productType = "OTHER";
       return row;
     }).filter(r => r.code && r.nameAz && r.salePrice);
@@ -194,6 +195,7 @@ export default function InventoryPage() {
                 className="h-10 rounded-2xl border border-[var(--border)] bg-white px-3 text-sm">
                 <option value="CURTAIN">Pərdə</option>
                 <option value="JALOUSIE">Jalüz</option>
+                <option value="CORNICE">Karniz</option>
                 <option value="OTHER">Digər</option>
               </select>
               <select value={newProduct.unit} onChange={e => setNewProduct({...newProduct, unit: e.target.value})}
@@ -265,7 +267,7 @@ export default function InventoryPage() {
             className="sm:w-72"
           />
           <div className="flex flex-wrap gap-2">
-            {(["", "CURTAIN", "JALOUSIE", "OTHER"] as const).map(t => (
+            {(["", "CURTAIN", "JALOUSIE", "CORNICE", "OTHER"] as const).map(t => (
               <button key={t} onClick={() => { setTypeFilter(t); setPage(1); }}
                 className={`rounded-[18px] border px-3 py-1.5 text-sm transition ${typeFilter === t ? "border-[var(--primary)] bg-[var(--primary)] text-white" : "border-[var(--border)] bg-white/60 hover:border-[var(--accent)]"}`}>
                 {t === "" ? "Hamısı" : PRODUCT_TYPE_LABELS[t]}
@@ -300,7 +302,7 @@ export default function InventoryPage() {
                       <td className="px-4 py-3 font-mono text-xs text-[var(--muted-foreground)]">{p.code}</td>
                       <td className="px-4 py-3 font-medium">{p.nameAz}</td>
                       <td className="px-4 py-3">
-                        <Badge variant={p.productType === "CURTAIN" ? "accent" : p.productType === "JALOUSIE" ? "default" : "secondary"} className="text-xs">
+                        <Badge variant={p.productType === "CURTAIN" ? "accent" : p.productType === "JALOUSIE" ? "default" : p.productType === "CORNICE" ? "warning" : "secondary"} className="text-xs">
                           {PRODUCT_TYPE_LABELS[p.productType]}
                         </Badge>
                       </td>
@@ -366,9 +368,10 @@ export default function InventoryPage() {
             <code className="block rounded-xl bg-[var(--soft-navy)] p-3 font-mono text-xs leading-6">
               Malin Kodu;Adi;Alis;Faiz;Satis;Qaliq;Vahidi;Tip<br/>
               PRD-001;Tül pərdə ağ;2.50;80;4.50;150;m;CURTAIN<br/>
-              JAL-001;Üfüqi jalüz;8.00;75;14.00;200;m²;JALOUSIE
+              JAL-001;Üfüqi jalüz;8.00;75;14.00;200;m²;JALOUSIE<br/>
+              KRN-001;Sadə karniz;2.00;50;3.00;100;m;CORNICE
             </code>
-            <p className="mt-2 text-[var(--muted-foreground)]">Ayırıcı: nöqtəli vergül (;) və ya vergül (,). Tip: CURTAIN, JALOUSIE, OTHER.</p>
+            <p className="mt-2 text-[var(--muted-foreground)]">Ayırıcı: nöqtəli vergül (;) və ya vergül (,). Tip: CURTAIN, JALOUSIE, CORNICE, OTHER.</p>
           </CardContent>
         </Card>
       </div>

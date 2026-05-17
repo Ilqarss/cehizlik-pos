@@ -1,10 +1,11 @@
 // ─── Rollər ───────────────────────────────────────────────────────────────────
-export type UserRole = "ADMIN" | "SELLER" | "TAILOR";
+export type UserRole = "ADMIN" | "SELLER" | "TAILOR" | "USTA";
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   ADMIN: "Admin (Sahibkar)",
   SELLER: "Satıcı",
-  TAILOR: "Dərzi"
+  TAILOR: "Dərzi",
+  USTA: "Usta"
 };
 
 // ─── İcazələr ─────────────────────────────────────────────────────────────────
@@ -83,7 +84,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "sales:create",
     "sales:read",
     "sales:discount",
-    // sales:profit YOX
+    "sales:profit",
     "customers:read",
     "customers:write",
     "tailor:read",
@@ -91,12 +92,19 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "expenses:write",       // Öz xərclərini yazır
     "expenses:read",        // Yalnız öz xərclərini görür
     "reports:read",
+    "reports:profit",
+    "reports:commissions",
     "receipt:print"
   ],
   TAILOR: [
     // Yalnız dərzi sifarişlərini görür və status yeniləyir
     "tailor:read",
     "tailor:write"
+  ],
+  USTA: [
+    // Usta üçün paneli
+    "dashboard:view",
+    "reports:read"
   ]
 };
 
@@ -105,12 +113,22 @@ export function hasPermission(role: UserRole, permission: Permission): boolean {
 }
 
 // ─── Məhsul tipləri ───────────────────────────────────────────────────────────
-export type ProductType = "CURTAIN" | "JALOUSIE" | "OTHER";
+export type ProductType = "CURTAIN" | "JALOUSIE" | "CORNICE" | "OTHER";
 
 export const PRODUCT_TYPE_LABELS: Record<ProductType, string> = {
   CURTAIN: "Pərdə",
   JALOUSIE: "Jalüz",
+  CORNICE: "Karniz",
   OTHER: "Digər"
+};
+
+// ─── Quraşdırma (Installation) ────────────────────────────────────────────────
+export type InstallationType = "STRAIGHT_CORNICE" | "CURVED_CORNICE" | "JALOUSIE";
+
+export const INSTALLATION_TYPE_LABELS: Record<InstallationType, string> = {
+  STRAIGHT_CORNICE: "Düz Karniz",
+  CURVED_CORNICE: "Əyri Karniz",
+  JALOUSIE: "Jalüz"
 };
 
 // ─── Dərzi statusu ────────────────────────────────────────────────────────────

@@ -6,7 +6,7 @@ const router = Router();
 
 router.get("/summary", authenticate, requirePermission("reports:read"), async (req: Request, res: Response): Promise<void> => {
   const { from, to } = req.query as Record<string, string>;
-  const isAdmin = (req as any).user?.role === "ADMIN";
+  const canViewFinancials = (req as any).user?.role === "ADMIN" || (req as any).user?.role === "SELLER";
 
   const dateFilter = from || to
     ? { soldAt: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } }
@@ -18,7 +18,7 @@ router.get("/summary", authenticate, requirePermission("reports:read"), async (r
         where: dateFilter,
         select: { total: true, profitAmt: true, soldAt: true, sellerId: true, seller: { select: { fullName: true } }, subtotal: true, discountPct: true, discountAmt: true }
       }),
-      isAdmin
+      canViewFinancials
         ? prisma.expense.findMany({
             where: from || to
               ? { expenseDate: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } }
@@ -29,13 +29,13 @@ router.get("/summary", authenticate, requirePermission("reports:read"), async (r
     ]);
 
     const totalRevenue = sales.reduce((s, x) => s + x.total, 0);
-    const totalProfit = isAdmin ? sales.reduce((s, x) => s + (x.profitAmt ?? 0), 0) : null;
-    const totalExpenses = isAdmin ? expenses.reduce((s, x) => s + x.amount, 0) : null;
-    const totalDiscount = isAdmin ? sales.reduce((s, x) => {
+    const totalProfit = canViewFinancials ? sales.reduce((s, x) => s + (x.profitAmt ?? 0), 0) : null;
+    const totalExpenses = canViewFinancials ? expenses.reduce((s, x) => s + x.amount, 0) : null;
+    const totalDiscount = canViewFinancials ? sales.reduce((s, x) => {
       const pctDiscount = x.subtotal * (x.discountPct / 100);
       return s + pctDiscount + x.discountAmt;
     }, 0) : null;
-    const netProfit = isAdmin && totalProfit !== null && totalExpenses !== null
+    const netProfit = canViewFinancials && totalProfit !== null && totalExpenses !== null
       ? totalProfit - totalExpenses
       : null;
 
@@ -44,7 +44,7 @@ router.get("/summary", authenticate, requirePermission("reports:read"), async (r
       data: {
         totalRevenue,
         totalSales: sales.length,
-        ...(isAdmin ? { totalProfit, totalExpenses, netProfit, totalDiscount } : {})
+        ...(canViewFinancials ? { totalProfit, totalExpenses, netProfit, totalDiscount } : {})
       }
     });
   } catch {
@@ -210,6 +210,66 @@ router.get("/tailor-bonuses", authenticate, requirePermission("reports:read"), a
   }
 });
 
+// ─── Usta qazancları ──────────────────────────────────────────────────────────
+router.get("/usta-earnings", authenticate, requirePermission("reports:read"), async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userRole = (req as any).user?.role;
+    const userId = (req as any).user?.id;
+    
+    const ustas = await prisma.user.findMany({
+      where: { 
+        role: "USTA", 
+        isActive: true,
+        ...(userRole === "USTA" ? { id: userId } : {})
+      },
+      select: { id: true, fullName: true }
+    });
+
+    const result = await Promise.all(
+      ustas.map(async usta => {
+        const orders = await prisma.installationOrder.findMany({
+          where: { ustaId: usta.id }
+        });
+
+        const totalFee = orders.reduce((s, o) => s + (o.totalFee ?? 0), 0);
+        const totalQuantity = orders.reduce((s, o) => s + (o.quantity ?? 0), 0);
+        const straightCount = orders.filter(o => o.installationType === "STRAIGHT_CORNICE").length;
+        const curvedCount = orders.filter(o => o.installationType === "CURVED_CORNICE").length;
+        const jalousieCount = orders.filter(o => o.installationType === "JALOUSIE").length;
+
+        // Aylıq breakdown
+        const monthly: Record<string, { fee: number; quantity: number; count: number }> = {};
+        for (const o of orders) {
+          const key = o.createdAt ? o.createdAt.toISOString().slice(0, 7) : "unknown";
+          if (!monthly[key]) monthly[key] = { fee: 0, quantity: 0, count: 0 };
+          monthly[key].fee += o.totalFee ?? 0;
+          monthly[key].quantity += o.quantity ?? 0;
+          monthly[key].count += 1;
+        }
+        const monthlyBreakdown = Object.entries(monthly)
+          .filter(([k]) => k !== "unknown")
+          .sort(([a], [b]) => b.localeCompare(a))
+          .map(([month, data]) => ({ month, ...data }));
+
+        return { 
+          ...usta, 
+          totalFee, 
+          totalQuantity, 
+          completedCount: orders.length, 
+          straightCount, 
+          curvedCount, 
+          jalousieCount, 
+          monthlyBreakdown 
+        };
+      })
+    );
+
+    res.json({ success: true, data: { items: result } });
+  } catch {
+    res.status(500).json({ success: false, error: "Usta qazancları alınmadı" });
+  }
+});
+
 // ─── Günlük Açot (Z-Report) ───────────────────────────────────────────────────
 router.get("/daily-print", authenticate, requirePermission("reports:read"), async (req: Request, res: Response): Promise<void> => {
   const { date } = req.query as Record<string, string>;
@@ -223,7 +283,7 @@ router.get("/daily-print", authenticate, requirePermission("reports:read"), asyn
   const endOfDay = new Date(`${date}T23:59:59`);
 
   try {
-    const [sales, expenses] = await Promise.all([
+    const [sales, expenses, ustaOrders] = await Promise.all([
       prisma.sale.findMany({
         where: { soldAt: { gte: startOfDay, lte: endOfDay } },
         include: {
@@ -236,6 +296,10 @@ router.get("/daily-print", authenticate, requirePermission("reports:read"), asyn
         where: { expenseDate: { gte: startOfDay, lte: endOfDay } },
         include: { user: { select: { fullName: true } } },
         orderBy: { expenseDate: "asc" }
+      }),
+      prisma.installationOrder.aggregate({
+        where: { sale: { soldAt: { gte: startOfDay, lte: endOfDay } } },
+        _sum: { totalFee: true }
       })
     ]);
 
@@ -278,6 +342,7 @@ router.get("/daily-print", authenticate, requirePermission("reports:read"), asyn
         totalCard,
         totalTransfer,
         totalExpenses,
+        totalUstaFees: ustaOrders?._sum?.totalFee ?? 0,
         netCash,
         salesCount: sales.length,
         sales: sales.map(s => ({

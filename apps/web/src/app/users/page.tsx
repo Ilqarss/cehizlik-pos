@@ -111,7 +111,7 @@ export default function UsersPage() {
                 <label className="text-xs font-semibold">Rol</label>
                 <select value={role} onChange={e => setRole(e.target.value as UserRole)}
                   className="mt-1 h-10 w-full rounded-2xl border border-[var(--border)] bg-white px-3 text-sm">
-                  {(["ADMIN", "SELLER", "TAILOR"] as UserRole[]).map(r => (
+                  {(["ADMIN", "SELLER", "TAILOR", "USTA"] as UserRole[]).map(r => (
                     <option key={r} value={r}>{ROLE_LABELS[r]}</option>
                   ))}
                 </select>
@@ -203,11 +203,12 @@ export default function UsersPage() {
         </Card>
 
         {/* Rol açıqlamaları */}
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
             { role: "ADMIN", label: "Admin (Sahibkar)", desc: "Tam giriş. Alış qiyməti, xalis mənfəət, komissiyalar." },
             { role: "SELLER", label: "Satıcı", desc: "Satış, anbar, müştəri. Alış qiymətini görmür." },
-            { role: "TAILOR", label: "Dərzi", desc: "Yalnız dərzi sifarişlərini görür və status yeniləyir." }
+            { role: "TAILOR", label: "Dərzi", desc: "Yalnız dərzi sifarişlərini görür və status yeniləyir." },
+            { role: "USTA", label: "Usta", desc: "Quraşdırma xidmətləri üçün seçilən usta." }
           ].map(item => (
             <div key={item.role} className="rounded-[22px] border border-[var(--border)] bg-white/60 p-4">
               <p className="font-semibold">{item.label}</p>
