@@ -42,6 +42,8 @@ type Sale = {
   soldAt: string; note?: string;
   customer?: { name: string; phone: string };
   seller?: { fullName: string };
+  tailorOrders?: { tailor?: { fullName: string } }[];
+  installationOrders?: { usta?: { fullName: string } }[];
 };
 
 export default function ReportsPage() {
@@ -365,6 +367,7 @@ export default function ReportsPage() {
                       <th className="px-4 py-3 text-left font-semibold">Çek #</th>
                       <th className="px-4 py-3 text-left font-semibold">Müştəri</th>
                       {canViewAll && <th className="px-4 py-3 text-left font-semibold">Satıcı</th>}
+                      <th className="px-4 py-3 text-left font-semibold">İşçilər (Dərzi/Usta)</th>
                       <th className="px-4 py-3 text-right font-semibold">Məbləğ</th>
                       <th className="px-4 py-3 text-right font-semibold">Endirim</th>
                       <th className="px-4 py-3 text-right font-semibold">Borc</th>
@@ -376,11 +379,19 @@ export default function ReportsPage() {
                       <tr><td colSpan={7} className="px-4 py-8 text-center text-[var(--muted-foreground)]">Satış tapılmadı</td></tr>
                     ) : recentSales.map(s => {
                       const totalDiscount = (s.subtotal - s.total) || ((s.subtotal * (s.discountPct ?? 0)) / 100 + (s.discountAmt ?? 0));
+                      const tailorNames = Array.from(new Set((s.tailorOrders || []).map(t => t.tailor?.fullName).filter(Boolean)));
+                      const ustaNames = Array.from(new Set((s.installationOrders || []).map(u => u.usta?.fullName).filter(Boolean)));
+                      const hasWorkers = tailorNames.length > 0 || ustaNames.length > 0;
                       return (
                       <tr key={s.id} className="border-b border-[var(--border)]/60 hover:bg-[var(--soft-navy)]/20">
                         <td className="px-4 py-3 font-mono text-xs text-[var(--muted-foreground)]">#{s.saleNumber.slice(-8)}</td>
                         <td className="px-4 py-3">{s.customer ? <span>{s.customer.name}<br/><span className="text-xs text-[var(--muted-foreground)]">{s.customer.phone}</span></span> : <span className="text-[var(--muted-foreground)]">—</span>}</td>
                         {canViewAll && <td className="px-4 py-3">{s.seller?.fullName ?? "—"}</td>}
+                        <td className="px-4 py-3 text-xs text-[var(--muted-foreground)]">
+                          {tailorNames.length > 0 && <div>Dərzi: <span className="font-medium text-[var(--foreground)]">{tailorNames.join(", ")}</span></div>}
+                          {ustaNames.length > 0 && <div className="mt-0.5">Usta: <span className="font-medium text-[var(--foreground)]">{ustaNames.join(", ")}</span></div>}
+                          {!hasWorkers && "—"}
+                        </td>
                         <td className="px-4 py-3 text-right font-semibold">₼ {s.total.toFixed(2)}</td>
                         <td className="px-4 py-3 text-right">
                           {totalDiscount > 0
@@ -410,8 +421,8 @@ export default function ReportsPage() {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right text-xs text-[var(--muted-foreground)]">
-                          {new Date(s.soldAt).toLocaleDateString("az-AZ")}
+                        <td className="px-4 py-3 text-right text-xs text-[var(--muted-foreground)] whitespace-nowrap">
+                          {new Date(s.soldAt).toLocaleString("az-AZ", { dateStyle: "short", timeStyle: "short" })}
                         </td>
                       </tr>
                       );

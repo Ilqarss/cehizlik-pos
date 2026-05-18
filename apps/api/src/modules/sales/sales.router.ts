@@ -34,7 +34,13 @@ router.get("/", requirePermission("sales:read"), async (req: Request, res: Respo
           customer: { select: { id: true, name: true, phone: true } },
           seller: { select: { id: true, fullName: true } },
           items: true,
-          payments: true
+          payments: true,
+          tailorOrders: {
+            include: { tailor: { select: { fullName: true } } }
+          },
+          installationOrders: {
+            include: { usta: { select: { fullName: true } } }
+          }
         }
       }),
       prisma.sale.count({ where })

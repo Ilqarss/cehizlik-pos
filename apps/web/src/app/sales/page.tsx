@@ -112,15 +112,20 @@ export default function SalesPage() {
   }, [apiFetch, productSearch]);
 
   const searchCustomer = useCallback(() => {
-    if (!customerPhone) return;
-    apiFetch<Customer>(`/customers?q=${encodeURIComponent(customerPhone)}&limit=1`)
+    const query = customerPhone.trim() || customerName.trim();
+    if (!query) return;
+    apiFetch<Customer>(`/customers?q=${encodeURIComponent(query)}&limit=1`)
       .then(d => {
         const c = (d as unknown as { items: Customer[] }).items?.[0];
-        if (c) { setFoundCustomer(c); setCustomerName(c.name); }
+        if (c) { 
+          setFoundCustomer(c); 
+          setCustomerName(c.name);
+          setCustomerPhone(c.phone);
+        }
         else setFoundCustomer(null);
       })
       .catch(() => setFoundCustomer(null));
-  }, [apiFetch, customerPhone]);
+  }, [apiFetch, customerPhone, customerName]);
 
   function addToCart(product: Product) {
     const key = `${product.id}_${Date.now()}`;
@@ -355,6 +360,7 @@ export default function SalesPage() {
                   value={customerPhone}
                   onChange={e => setCustomerPhone(e.target.value)}
                   onBlur={searchCustomer}
+                  onKeyDown={e => e.key === 'Enter' && searchCustomer()}
                 />
                 <Button variant="outline" size="sm" onClick={searchCustomer} className="shrink-0">Axtar</Button>
               </div>
@@ -362,6 +368,8 @@ export default function SalesPage() {
                 placeholder="Müştəri adı"
                 value={customerName}
                 onChange={e => setCustomerName(e.target.value)}
+                onBlur={searchCustomer}
+                onKeyDown={e => e.key === 'Enter' && searchCustomer()}
               />
               {foundCustomer && (
                 <div className="col-span-2 rounded-[18px] border border-[var(--success)]/30 bg-[var(--success-soft)] px-3 py-2 text-sm">
